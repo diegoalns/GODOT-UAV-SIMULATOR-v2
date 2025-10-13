@@ -12,8 +12,8 @@ var tile_width: float = 702.0  # Width of each tile in meters (X axis)
 var tile_height: float = 927.0  # Height of each tile in meters (Z axis)
 
 # Coordinate conversion constants (same as FlightPlanManager)
-const ORIGIN_LAT = 40.55417343  # Reference latitude for coordinate conversion
-const ORIGIN_LON = -73.99583928  # Reference longitude for coordinate conversion
+const ORIGIN_LAT = 40.891674  # Reference latitude for coordinate conversion
+const ORIGIN_LON = -74.000032  # Reference longitude for coordinate conversion
 
 func _ready():
 	# Load the mesh library resource
@@ -30,6 +30,7 @@ func initialize_gridmap(gridmap: GridMap):
 	@param gridmap: GridMap - The GridMap node to initialize
 	"""
 	gridmap_node = gridmap
+	gridmap_node.cell_size = Vector3(702, 0.5, 927)
 	# Note: mesh_library is already set by the visualization system
 	
 	print("GridMapManager: GridMap initialized with cell size: ", gridmap_node.cell_size)
@@ -122,11 +123,11 @@ func latlon_to_world_position(latitude: float, longitude: float) -> Vector3:
 	var meters_per_deg_lon = 111320.0 * cos(deg_to_rad(ORIGIN_LAT))  # Meters per degree longitude at this latitude
 	
 	var x = (longitude - ORIGIN_LON) * meters_per_deg_lon  # X position in meters
-	var z = (latitude - ORIGIN_LAT) * meters_per_deg_lat   # Z position in meters
+	var z = (ORIGIN_LAT - latitude) * meters_per_deg_lat   # Z position in meters
 	
 	return Vector3(x, 0, z)
 
-func world_position_to_grid_coords(world_pos: Vector3, altitude: float = 0.0) -> Vector3i:
+func world_position_to_grid_coords(world_pos: Vector3, altitude: float) -> Vector3i:
 	"""
 	Convert world position to GridMap grid coordinates with height based on altitude
 	Each tile is centered at its coordinate position and has dimensions 702m x 927m
@@ -142,7 +143,7 @@ func world_position_to_grid_coords(world_pos: Vector3, altitude: float = 0.0) ->
 	# Use altitude directly as Y coordinate to create proper elevation
 	var grid_y = int(altitude*0.3048)  # Use CSV altitude directly as grid height
 	
-	return Vector3i(grid_x, 0, grid_z)
+	return Vector3i(grid_x, grid_y, grid_z)
 
 func populate_gridmap():
 	"""

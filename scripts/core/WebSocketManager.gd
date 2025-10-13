@@ -32,7 +32,7 @@ func connect_to_server(url):
 		schedule_reconnect()
 		
 # Called every frame; used to poll the WebSocket for new events and data
-func _process(delta):
+func _process(_delta):
 	ws_peer.poll()
 	
 	# Check connection state
@@ -56,7 +56,7 @@ func _process(delta):
 	while ws_peer.get_available_packet_count() > 0:
 		var packet = ws_peer.get_packet()
 		emit_signal("data_received", packet)
-		print("Received data: ", packet.get_string_from_utf8())
+		#print("Received data: ", packet.get_string_from_utf8())
 
 func schedule_reconnect():
 	print("Scheduling reconnection attempt in ", reconnect_timer.wait_time, " seconds")

@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://b05s6clgkef0c"
+
+[deps]
+
+files=["res://logs/mean_distances_1.Mean.translation"]
+
+source_file="res://logs/mean_distances_1.csv"
+dest_files=["res://logs/mean_distances_1.Mean.translation"]
+
+[params]
+
+compress=true
+delimiter=0

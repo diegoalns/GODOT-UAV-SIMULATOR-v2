@@ -455,6 +455,91 @@ optimized_paths = simulated_annealing(UAV_ROUTES)
 if optimized_paths is None:
     print("Could not find a valid set of paths.")
 else:
+    # --- Cost Comparison: RRT vs Simulated Annealing ---
+    print("\n" + "="*60)
+    print("COST COMPARISON: RRT vs SIMULATED ANNEALING")
+    print("="*60)
+    
+    # Generate initial RRT solution for comparison
+    initial_rrt_paths = generate_initial_solution(UAV_ROUTES)
+    
+    if initial_rrt_paths:
+        # Calculate costs for both solutions
+        rrt_cost = path_cost(initial_rrt_paths)
+        sa_cost = path_cost(optimized_paths)
+        
+        # Calculate cost components separately for detailed analysis
+        def analyze_cost_components(paths, solution_name):
+            """Analyze and display cost components (path length vs conflicts)"""
+            total_length = 0
+            total_conflicts = 0
+            occupied_at_time = {}
+            
+            # Calculate path lengths and conflicts separately
+            for path in paths:
+                path_len = 0
+                for i in range(len(path) - 1):
+                    u, v = path[i], path[i+1]
+                    try:
+                        path_len += G[u][v]['weight']
+                    except KeyError:
+                        pass
+                    
+                    # Check for conflicts at current time step
+                    if (u, i) in occupied_at_time:
+                        total_conflicts += 1
+                    else:
+                        occupied_at_time[(u, i)] = True
+                
+                # Check the last node of the path
+                if (path[-1], len(path) - 1) in occupied_at_time:
+                    total_conflicts += 1
+                else:
+                    occupied_at_time[(path[-1], len(path) - 1)] = True
+                
+                total_length += path_len
+            
+            conflict_penalty_cost = total_conflicts * 10000
+            total_cost = total_length + conflict_penalty_cost
+            
+            print(f"\n{solution_name} Solution Analysis:")
+            print(f"  • Path Length Cost: {total_length:.2f} meters")
+            print(f"  • Number of Conflicts: {total_conflicts}")
+            print(f"  • Conflict Penalty Cost: {conflict_penalty_cost:.2f}")
+            print(f"  • TOTAL COST: {total_cost:.2f}")
+            
+            return total_cost, total_length, total_conflicts
+        
+        # Analyze both solutions
+        rrt_total, rrt_length, rrt_conflicts = analyze_cost_components(initial_rrt_paths, "RRT")
+        sa_total, sa_length, sa_conflicts = analyze_cost_components(optimized_paths, "SIMULATED ANNEALING")
+        
+        # Calculate improvements
+        cost_improvement = rrt_total - sa_total
+        length_improvement = rrt_length - sa_length
+        conflict_reduction = rrt_conflicts - sa_conflicts
+        
+        print(f"\n" + "-"*40)
+        print("IMPROVEMENT SUMMARY:")
+        print("-"*40)
+        print(f"Total Cost Reduction: {cost_improvement:.2f} ({((cost_improvement/rrt_total)*100):.1f}% improvement)")
+        print(f"Path Length Change: {length_improvement:.2f} meters ({((length_improvement/rrt_length)*100):.1f}% change)")
+        print(f"Conflicts Eliminated: {conflict_reduction} conflicts")
+        
+        if sa_conflicts == 0:
+            print("✅ SUCCESS: All conflicts eliminated by Simulated Annealing!")
+        else:
+            print(f"⚠️  WARNING: {sa_conflicts} conflicts still remain")
+        
+        print(f"\nNumber of UAVs: {len(optimized_paths)}")
+        print(f"Average path length per UAV:")
+        print(f"  • RRT: {rrt_length/len(initial_rrt_paths):.2f} meters")
+        print(f"  • SA:  {sa_length/len(optimized_paths):.2f} meters")
+    
+    else:
+        print("Could not generate initial RRT solution for comparison.")
+    
+    print("="*60)
     A = nx.adjacency_matrix(G)
     A.toarray()
 

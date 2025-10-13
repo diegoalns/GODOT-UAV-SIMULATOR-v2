@@ -7,6 +7,8 @@ extends Node
 @onready var logger = SimpleLogger.new()
 
 var simulation_time: float = 0.0
+# Static reference for global access to simulation time
+static var current_simulation_time: float = 0.0
 var running: bool = false
 var speed_multiplier: float = 1.0
 var time_step: float = 1.0
@@ -74,16 +76,22 @@ func _physics_process(delta: float):
 		
 	# Simulation time and real runtime calculation
 	simulation_time += time_step * speed_multiplier
+	current_simulation_time = simulation_time  # Update static reference for global access
 	real_runtime += delta
 	
-	# Launch the drones when ETD
+	# Launch the drones when ETD - using range comparison to handle floating point precision issues
 	for plan in plans:
-		if plan.etd_seconds == simulation_time and plan.created == false:
+		# Use range comparison instead of exact equality to prevent multiple spawns due to floating point precision
+		# Check if current time has passed the ETD and drone hasn't been created yet
+		if not plan.created and plan.etd_seconds <= simulation_time and plan.etd_seconds > (simulation_time - time_step * speed_multiplier):
 			plan.created = true
 			var origin = flight_plan_manager.latlon_to_position(plan.origin_lat, plan.origin_lon)
 			var destination = flight_plan_manager.latlon_to_position(plan.dest_lat, plan.dest_lon)
+			
+			# Add debug logging to track drone creation and detect potential duplicates
+			print("Creating drone %s at simulation time %.2f (ETD: %.2f)" % [plan.id, simulation_time, plan.etd_seconds])
+			
 			drone_manager.create_test_drone(plan.id, origin, destination, plan.model)
-			print("Created drone %s from %s to %s" % [plan.id, origin, destination])
 	
 	# Update all created drones
 	drone_manager.update_all(time_step * speed_multiplier)

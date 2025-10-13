@@ -1,5 +1,5 @@
 class_name Drone
-extends Node
+extends Area3D
 
 # Core identification and position
 var drone_id: String
@@ -37,11 +37,11 @@ var target_speed: float = 0.0       # Target speed for current segment
 var waiting_for_route_response: bool = false
 var route_response_timer: Timer
 
-# Collision detection system
+# Collision detection system - now using Area3D with signals
 var collision_radius: float = 15.0  # Collision detection radius in meters - creates a 60m diameter safety zone
 var is_colliding: bool = false      # Boolean flag indicating if drone is currently in collision state
 var collision_partners: Array = []  # Array of drone IDs currently in collision with this drone
-var collision_manager_ref: Node = null  # Reference to collision manager for accessing other drones
+var collision_shape: CollisionShape3D = null  # Reference to collision shape for Area3D
 
 
 func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
@@ -57,6 +57,9 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 	drone_id = id
 	current_position = start
 	origin_position = start
+	# CRITICAL: Immediately sync Area3D global_position with logical position
+	# This prevents false collisions at origin (0,0,0) before first update() call
+	global_position = current_position
 	destination_position = end
 	model = drone_model
 	
@@ -71,10 +74,13 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 	returning = false
 	current_waypoint_index = 0
 	
+	# Set up collision detection using Area3D
+	_setup_collision_detection()
+	
 	# Set up response timeout timer
 	route_response_timer = Timer.new()
 	route_response_timer.one_shot = true
-	route_response_timer.wait_time = 10.0  # 10 second timeout
+	route_response_timer.wait_time = 10.0  # 10 second timeout - Timer configured to wait 10 seconds before timing out
 	route_response_timer.timeout.connect(_on_route_response_timeout)
 	add_child(route_response_timer)
 	
@@ -118,6 +124,23 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 	# Set initial target
 	if route.size() > 0:
 		_set_current_target()
+
+func _setup_collision_detection():
+	"""
+	Set up Area3D collision detection system
+	
+	Creates a spherical collision shape and connects to collision signals
+	"""
+	# Create collision shape - SphereShape3D for 360-degree detection
+	collision_shape = CollisionShape3D.new()
+	var sphere_shape = SphereShape3D.new()
+	sphere_shape.radius = collision_radius  # 15.0 meters radius
+	collision_shape.shape = sphere_shape
+	add_child(collision_shape)
+	
+	# Connect to Area3D collision signals for automatic detection
+	area_entered.connect(_on_area_entered)
+	area_exited.connect(_on_area_exited)
 
 func _set_model_attributes():
 	"""
@@ -334,10 +357,8 @@ func update(delta: float):
 	# Check completion conditions (battery, range limits)
 	_check_completion_conditions()
 	
-	# Perform collision detection if we have access to other drones
-	if collision_manager_ref and collision_manager_ref.has_method("get_all_drones"):
-		var all_drones: Dictionary = collision_manager_ref.get_all_drones()
-		check_collision_with_other_drones(all_drones)
+	# Synchronize Area3D position with logical drone position for collision detection
+	global_position = current_position
 
 func _update_holonomic_movement(delta: float):
 	"""
@@ -378,8 +399,8 @@ func _check_waypoint_reached():
 	
 	if distance_to_target < arrival_threshold:
 		# Reached current waypoint
-		var waypoint = route[current_waypoint_index]
-		print("Drone %s reached waypoint %d: %s" % [drone_id, current_waypoint_index, waypoint.description])
+		var _waypoint = route[current_waypoint_index]  # Waypoint data dictionary - prefixed with underscore as it's currently unused but kept for future debugging
+		#print("Drone %s reached waypoint %d: %s" % [drone_id, current_waypoint_index, waypoint.description])
 		
 		# Advance to next waypoint
 		current_waypoint_index += 1
@@ -410,91 +431,97 @@ func _check_completion_conditions():
 		completed = true
 		print("Drone %s exceeded maximum range" % drone_id)
 
-# Collision detection functions
-func check_collision_with_other_drones(other_drones: Dictionary):
+# Area3D collision signal handlers - automatic collision detection
+func _on_area_entered(other_area: Area3D):
 	"""
-	Check for collisions with other drones in the simulation
+	Handle when another Area3D (drone) enters this drone's collision radius
 	
 	Args:
-		other_drones: Dictionary of all active drones keyed by drone_id
+		other_area: The Area3D that entered our collision space
 	"""
-	var previous_collision_state = is_colliding  # Store previous collision state to detect changes
-	var current_collision_partners: Array = []  # Array to track which drones this drone is colliding with
-	
-	# Reset collision state for this frame
-	is_colliding = false
-	
-	# Check distance to all other drones
-	for other_drone_id in other_drones.keys():
-		if other_drone_id == drone_id:
-			continue  # Skip self-comparison
-		
-		var other_drone: Drone = other_drones[other_drone_id]
+	# Verify the other area is a drone and not this drone itself
+	if other_area is Drone and other_area != self:
+		var other_drone = other_area as Drone
 		
 		# Skip completed drones as they're not actively flying
 		if other_drone.completed:
-			continue
+			return
 		
-		# Calculate 3D distance between drone centers
-		var distance_between_drones: float = current_position.distance_to(other_drone.current_position)
-		
-		# Check if collision spheres overlap (sum of both radii)
-		var collision_threshold: float = collision_radius + other_drone.collision_radius
-		
-		if distance_between_drones < collision_threshold:
-			# Collision detected
-			is_colliding = true
-			current_collision_partners.append(other_drone_id)
+		# Add to collision partners if not already present
+		if not collision_partners.has(other_drone.drone_id):
+			collision_partners.append(other_drone.drone_id)
 			
-			# Log collision event if this is a new collision
-			if not collision_partners.has(other_drone_id):
-				_handle_collision_event(other_drone, distance_between_drones)
-	
-	# Update collision partners list
-	collision_partners = current_collision_partners
-	
-	# Handle collision state changes
-	if previous_collision_state != is_colliding:
-		_handle_collision_state_change(previous_collision_state, is_colliding)
+			# Calculate actual distance and threshold for CSV logging
+			var distance = current_position.distance_to(other_drone.current_position)
+			var threshold = collision_radius + other_drone.collision_radius
+			_log_collision_event("COLLISION_START", other_drone, distance, threshold)
+		
+		# Update collision state
+		var previous_collision_state = is_colliding
+		is_colliding = true
+		
+		# Handle state change if needed
+		if not previous_collision_state:
+			_handle_collision_state_change(false, true)
 
-func _handle_collision_event(other_drone: Drone, distance: float):
+func _on_area_exited(other_area: Area3D):
 	"""
-	Handle a new collision event between this drone and another
+	Handle when another Area3D (drone) exits this drone's collision radius
 	
 	Args:
+		other_area: The Area3D that exited our collision space
+	"""
+	# Verify the other area is a drone
+	if other_area is Drone and other_area != self:
+		var other_drone = other_area as Drone
+		
+		# Remove from collision partners
+		var partner_index = collision_partners.find(other_drone.drone_id)
+		if partner_index >= 0:
+			collision_partners.remove_at(partner_index)
+			
+			# Log collision end event to CSV
+			var distance = current_position.distance_to(other_drone.current_position)
+			var threshold = collision_radius + other_drone.collision_radius
+			_log_collision_event("COLLISION_END", other_drone, distance, threshold)
+		
+		# Update collision state
+		var previous_collision_state = is_colliding
+		is_colliding = collision_partners.size() > 0
+		
+		# Handle state change if we're no longer colliding with anyone
+		if previous_collision_state and not is_colliding:
+			_handle_collision_state_change(true, false)
+
+func _log_collision_event(event_type: String, other_drone: Drone, distance: float, threshold: float):
+	"""
+	Log a collision event to the CSV file via the SimpleLogger singleton
+	
+	Args:
+		event_type: Type of collision event ("COLLISION_START" or "COLLISION_END")
 		other_drone: The Drone object this drone is colliding with
 		distance: The actual distance between the two drone centers in meters
+		threshold: The collision detection threshold distance in meters
 	"""
-	var collision_severity = "CRITICAL"  # All collisions within 30m radius are critical
-	
-	print("COLLISION DETECTED: Drone %s colliding with Drone %s at distance %.2f meters (threshold: %.2f meters) - %s" % [
-		drone_id, 
-		other_drone.drone_id, 
-		distance, 
-		collision_radius + other_drone.collision_radius,
-		collision_severity
-	])
-	
-	# Log detailed collision information
-	print("  - Drone %s position: %s, speed: %.2f m/s" % [drone_id, str(current_position), current_speed])
-	print("  - Drone %s position: %s, speed: %.2f m/s" % [other_drone.drone_id, str(other_drone.current_position), other_drone.current_speed])
-	
-	# Note: Only logging collision, no behavioral response implemented
+	# Only log collision if this drone's ID is lexicographically smaller than the other drone's ID
+	# This prevents duplicate logging (A->B and B->A) by ensuring only one drone logs each collision pair
+	if drone_id < other_drone.drone_id:
+		# Use SimpleLogger singleton to log collision event to CSV
+		if SimpleLogger.instance:
+			var sim_time = SimulationEngine.current_simulation_time
+			SimpleLogger.instance.log_collision_event(sim_time, event_type, self, other_drone, distance, threshold)
 
-func _handle_collision_state_change(previous_state: bool, new_state: bool):
+func _handle_collision_state_change(_previous_state: bool, _new_state: bool):
 	"""
 	Handle transitions between collision and non-collision states
 	
 	Args:
-		previous_state: Previous collision state (bool)
-		new_state: New collision state (bool)
+		_previous_state: Previous collision state (bool) - unused, kept for interface compatibility
+		_new_state: New collision state (bool) - unused, kept for interface compatibility
 	"""
-	if not previous_state and new_state:
-		# Entering collision state
-		print("Drone %s ENTERING collision state with %d other drones" % [drone_id, collision_partners.size()])
-	elif previous_state and not new_state:
-		# Exiting collision state
-		print("Drone %s EXITING collision state - all clear" % drone_id)
+	# Collision state changes are now only logged to CSV via collision events
+	# No console output needed - all data is captured in the CSV log
+	pass
 
 func _execute_collision_response(_other_drone: Drone):
 	"""
@@ -507,14 +534,8 @@ func _execute_collision_response(_other_drone: Drone):
 	# This function is kept for future extensibility if collision response is needed
 	pass
 
-func set_collision_manager_reference(manager_ref: Node):
-	"""
-	Set reference to collision manager for accessing other drones
-	
-	Args:
-		manager_ref: Reference to the node managing all drones (typically DroneManager)
-	"""
-	collision_manager_ref = manager_ref
+# Note: collision_manager_reference no longer needed with Area3D collision system
+# Collision detection now happens automatically through Godot's physics engine
 
 func get_collision_info() -> Dictionary:
 	"""
@@ -568,7 +589,7 @@ func _on_route_response_received(data):
 		data: PackedByteArray containing the server response
 	"""
 	var response_text = data.get_string_from_utf8()
-	print("Drone %s received response: %s" % [drone_id, response_text])
+	#print("Drone %s received response: %s" % [drone_id, response_text])
 	
 	# Parse JSON response
 	var json = JSON.new()

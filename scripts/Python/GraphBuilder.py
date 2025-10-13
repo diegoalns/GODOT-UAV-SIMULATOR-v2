@@ -174,7 +174,7 @@ def create_graph():
     max_lon = (max_lon_degree - origin_lon_degrees) * meters_per_degree
 
     # Define grid dimensions
-    n_lat, n_lon, n_alt = 100, 100, 2
+    n_lat, n_lon, n_alt = 100, 100, 3
 
     # Conversion to position meters ()
 

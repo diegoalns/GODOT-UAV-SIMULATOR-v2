@@ -3,11 +3,13 @@
 importer="csv_translation"
 type="Translation"
 uid="uid://doxxmntq7c0rn"
-valid=false
 
 [deps]
 
+files=["res://logs/simple_log.DroneID.translation", "res://logs/simple_log.X.translation", "res://logs/simple_log.Y.translation", "res://logs/simple_log.Z.translation", "res://logs/simple_log.Target position.translation", "res://logs/simple_log.Target Speed.translation", "res://logs/simple_log.Origin Lat.translation", "res://logs/simple_log.Origin Lon.translation", "res://logs/simple_log.Destination Lat.translation", "res://logs/simple_log.Destination Lon.translation", "res://logs/simple_log.Completed.translation"]
+
 source_file="res://logs/simple_log.csv"
+dest_files=["res://logs/simple_log.DroneID.translation", "res://logs/simple_log.X.translation", "res://logs/simple_log.Y.translation", "res://logs/simple_log.Z.translation", "res://logs/simple_log.Target position.translation", "res://logs/simple_log.Target Speed.translation", "res://logs/simple_log.Origin Lat.translation", "res://logs/simple_log.Origin Lon.translation", "res://logs/simple_log.Destination Lat.translation", "res://logs/simple_log.Destination Lon.translation", "res://logs/simple_log.Completed.translation"]
 
 [params]
 

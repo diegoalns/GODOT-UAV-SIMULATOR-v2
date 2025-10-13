@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://jetvavaxt1f5"
+
+[deps]
+
+files=["res://logs/collision_log_1.Event.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Distance.translation", "res://logs/collision_log_1.Collision.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation"]
+
+source_file="res://logs/collision_log_1.csv"
+dest_files=["res://logs/collision_log_1.Event.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Distance.translation", "res://logs/collision_log_1.Collision.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation", "res://logs/collision_log_1.Drone.translation"]
+
+[params]
+
+compress=true
+delimiter=0

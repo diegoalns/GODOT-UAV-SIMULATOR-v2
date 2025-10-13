@@ -10,7 +10,7 @@ var terrain_gridmap: GridMap = null  # GridMap node for terrain visualization
 var gridmap_manager: GridMapManager = null  # Manager for terrain data and population
 
 # Movement and control variables
-var move_speed = 20000.0  # Speed for movement
+var move_speed = 1000000.0  # Speed for movement
 var rotation_speed = 0.001  # Speed of rotation with mouse
 var mouse_sensitivity = 0.001
 var camera_offset = Vector3(0, 5, 0)  # Offset from balloon position - slightly above center for better view
@@ -21,11 +21,11 @@ var camera_fov = 90.0  # Field of view in degrees - adjustable for different vie
 var camera_near_plane = 0.1  # Near clipping plane distance - objects closer than this won't render (size: 1 float in meters)
 var camera_far_plane = 100000.0  # Far clipping plane distance - objects farther than this won't render (size: 1 float in meters)
 
-# Environment settings
-var sky_color_top = Color(0.4, 0.6, 1.0)  # Light blue color for top of sky (size: Color with RGBA values)
-var sky_color_horizon = Color(0.7, 0.8, 1.0)  # Lighter blue for horizon (size: Color with RGBA values)
-var ground_color = Color(0.4, 0.3, 0.2)  # Brown color for ground (size: Color with RGBA values)
-var sun_elevation_degrees = 90.0  # Sun elevation angle in degrees above horizon - 90° = apogee (directly overhead) (size: 1 float, 0-90 degrees)
+# Environment settings - Realistic daytime aerial simulation colors
+var sky_color_top = Color(0.3, 0.7, 1.0)  # Deep blue sky at zenith (size: Color with RGBA values)
+var sky_color_horizon = Color(0.2, 0.2, 0.8)  # Light blue/white at horizon for realistic atmosphere (size: Color with RGBA values)
+var ground_color = Color(0.2, 0.2, 0.2)  # Natural brown/tan earth color (size: Color with RGBA values)0.5, 0.4, 0.25
+var sun_elevation_degrees = 230.0  # Sun elevation angle in degrees above horizon - 90° = apogee (directly overhead) (size: 1 float, 0-90 degrees)
 var sun_azimuth_degrees = 0.0  # Sun azimuth angle in degrees - not relevant when sun is at apogee (size: 1 float, 0-360 degrees)
 
 # Visualization scale factor
@@ -56,7 +56,7 @@ func set_camera_fov(fov_degrees: float):
 			if child is Camera3D:
 				var camera = child as Camera3D
 				camera.fov = camera_fov
-				print("Camera FOV updated to: %s degrees" % camera_fov)
+				#print("Camera FOV updated to: %s degrees" % camera_fov)
 				break
 
 func set_camera_clipping_planes(near_distance: float, far_distance: float):
@@ -77,14 +77,14 @@ func set_camera_clipping_planes(near_distance: float, far_distance: float):
 				var camera = child as Camera3D
 				camera.near = camera_near_plane
 				camera.far = camera_far_plane
-				print("Camera clipping planes updated - Near: %s, Far: %s" % [camera_near_plane, camera_far_plane])
+				#print("Camera clipping planes updated - Near: %s, Far: %s" % [camera_near_plane, camera_far_plane])
 				break
 
 func _ready():
 	setup_balloon()
 	setup_camera()
-	setup_environment()
-	setup_lighting()
+	setup_lighting()      # Create DirectionalLight3D first
+	setup_environment()   # Then create sky environment - it will sync with the light
 	setup_ground()
 	setup_terrain()
 	
@@ -113,8 +113,12 @@ func setup_environment():
 	"""
 	Set up the sky environment with blue gradient background
 	Creates a sky dome with proper colors for realistic aerial simulation
+	NOTE: This function must be called AFTER setup_lighting() so that the 
+	ProceduralSkyMaterial can sync its sun disk with the DirectionalLight3D
+	The sun position is automatically controlled by the DirectionalLight3D when
+	its sky_mode is set to SKY_MODE_LIGHT_AND_SKY
 	"""
-	print("VisualizationSystem: Setting up sky environment...")
+	#print("VisualizationSystem: Setting up sky environment...")
 	
 	# Create environment resource for the scene
 	var environment = Environment.new()
@@ -132,16 +136,20 @@ func setup_environment():
 	sky_material.sky_top_color = sky_color_top  # Deep blue at zenith
 	sky_material.sky_horizon_color = sky_color_horizon  # Lighter blue at horizon
 	sky_material.ground_bottom_color = ground_color  # Brown ground color
-	sky_material.ground_horizon_color = ground_color.lightened(0.3)  # Slightly lighter brown at horizon
+	sky_material.ground_horizon_color = ground_color.lightened(1)  # Slightly lighter brown at horizon
 	
 	# Configure sky gradient curves for proper visibility (valid ProceduralSkyMaterial properties)
 	sky_material.sky_curve = 0.25  # Sky gradient curve - controls how quickly sky color changes with altitude
 	sky_material.ground_curve = 0.02  # Ground gradient curve - controls ground color blending
 	
-	# Set sun parameters for apogee (90-degree elevation - directly overhead)
-	sky_material.sun_angle_max = 60.0  # Sun disk size in degrees
-	sky_material.sun_curve = 0.15  # Sun intensity curve
-	# Sun position is controlled by the directional light orientation, not sky material properties
+	# DISABLE the built-in sun in ProceduralSkyMaterial - we want only our DirectionalLight3D
+	sky_material.sun_angle_max = 15.0  # Set sun disk size to 0 to make it invisible
+	sky_material.sun_curve = 0.9      # Set sun intensity to 0 to disable it completely
+	
+	# Configure sun position to match directional light at apogee (directly overhead)
+	# In Godot 4, the ProceduralSkyMaterial automatically syncs with DirectionalLight3D
+	# when the light's sky_mode is set to SKY_MODE_LIGHT_AND_SKY
+	# No manual sun positioning needed - the DirectionalLight3D controls everything
 	
 	# Apply the sky material to the sky resource
 	sky.sky_material = sky_material
@@ -151,7 +159,7 @@ func setup_environment():
 	
 	# Set ambient lighting from sky
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	environment.ambient_light_energy = 0.3  # Moderate ambient lighting
+	environment.ambient_light_energy = 0.4  # Slightly brighter ambient lighting for better visibility
 	
 	# Sky brightness is controlled by the sky material itself and ambient lighting
 	
@@ -161,14 +169,22 @@ func setup_environment():
 	world_environment.environment = environment
 	add_child(world_environment)
 	
-	print("VisualizationSystem: Sky environment setup complete - Sky colors: top=%s, horizon=%s" % [sky_color_top, sky_color_horizon])
+	#print("VisualizationSystem: Sky environment setup complete - Sky colors: top=%s, horizon=%s" % [sky_color_top, sky_color_horizon])
 
 func setup_lighting():
 	"""
 	Set up directional lighting to simulate the sun at specified elevation and azimuth
 	Creates realistic lighting for aerial simulation with proper shadows
+	NOTE: This function must be called BEFORE setup_environment() so that the
+	DirectionalLight3D can control the sun disk position in the ProceduralSkyMaterial
 	"""
 	print("VisualizationSystem: Setting up sun lighting...")
+	
+	# First, remove any existing DirectionalLight3D nodes to prevent conflicts
+	for child in get_children():
+		if child is DirectionalLight3D:
+			print("VisualizationSystem: Removing existing DirectionalLight3D: %s" % child.name)
+			child.queue_free()
 	
 	# Create directional light to simulate the sun
 	var sun_light = DirectionalLight3D.new()
@@ -207,25 +223,31 @@ func setup_lighting():
 		sun_light.look_at(sun_light.position - sun_direction * 1000, Vector3.UP)
 	
 	# Configure light properties for realistic sun lighting
-	sun_light.light_energy = 1.2  # Bright sun intensity
-	sun_light.light_color = Color(1.0, 0.95, 0.8)  # Slightly warm sunlight color
+	sun_light.light_energy = 1  # Natural sun intensity - not too bright
+	sun_light.light_color = Color(1.0, 0.98, 0.9)  # Natural warm sunlight color
+	
+	# CRITICAL: Set sky_mode to control both scene lighting AND sky sun position
+	sun_light.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_AND_SKY  # This makes the sun disk follow the light direction
 	
 	# Enable shadows for realistic terrain and object shading
 	sun_light.shadow_enabled = true
 	sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	sun_light.directional_shadow_max_distance = 50000.0 * visual_scale  # Long shadow distance for aerial view
-	
+	sun_light.rotation.x = deg_to_rad(sun_elevation_degrees)
 	# Add the sun light to the scene
 	add_child(sun_light)
 	
 	print("VisualizationSystem: Sun positioned at %s° elevation, %s° azimuth" % [sun_elevation_degrees, sun_azimuth_degrees])
+	print("VisualizationSystem: Sun light position: %s" % sun_light.position)
+	print("VisualizationSystem: Sun light rotation: %s" % sun_light.rotation_degrees)
+	print("VisualizationSystem: Sun light sky_mode: %s" % sun_light.sky_mode)
 
 func setup_ground():
 	"""
 	Create a large brown ground plane to serve as the base terrain
 	Provides a consistent brown surface beneath the detailed terrain data
 	"""
-	print("VisualizationSystem: Setting up ground plane...")
+	#print("VisualizationSystem: Setting up ground plane...")
 	
 	# Create a large ground plane mesh
 	var ground_mesh_instance = MeshInstance3D.new()
@@ -233,15 +255,15 @@ func setup_ground():
 	
 	# Create a large plane mesh for the ground (size in meters scaled by visual_scale)
 	var plane_mesh = PlaneMesh.new()
-	plane_mesh.size = Vector2(200000, 200000) * visual_scale  # Very large ground plane (200km x 200km)
-	plane_mesh.subdivide_width = 10  # Some subdivision for potential detail
-	plane_mesh.subdivide_depth = 10
+	plane_mesh.size = Vector2(2000, 2000) * visual_scale  # Very large ground plane (200km x 200km)
+	plane_mesh.subdivide_width = 10 # Some subdivision for potential detail
+	plane_mesh.subdivide_depth = 1000
 	
 	# Create brown material for the ground
 	var ground_material = StandardMaterial3D.new()
 	ground_material.albedo_color = ground_color  # Brown color
 	ground_material.roughness = 0.8  # Rough surface like dirt/soil
-	ground_material.metallic = 0.0   # Non-metallic surface
+	ground_material.metallic = 0.1   # Non-metallic surface
 	
 	# Apply material and mesh to the instance
 	ground_mesh_instance.mesh = plane_mesh
@@ -253,14 +275,14 @@ func setup_ground():
 	# Add to the scene
 	add_child(ground_mesh_instance)
 	
-	print("VisualizationSystem: Ground plane setup complete")
+	#print("VisualizationSystem: Ground plane setup complete")
 
 func setup_terrain():
 	"""
 	Initialize the terrain GridMap system within the visualization system
 	Creates GridMap and GridMapManager, loads terrain data, and scales appropriately
 	"""
-	print("VisualizationSystem: Setting up terrain system...")
+	#print("VisualizationSystem: Setting up terrain system...")
 	
 	# Create GridMap node for terrain visualization
 	terrain_gridmap = GridMap.new()
@@ -418,7 +440,25 @@ func add_drone(drone: Drone):
 	add_child(drone_node)
 	drone_meshes[drone.drone_id] = drone_node
 
-	print("Added visualization for drone %s" % drone.drone_id)
+	#print("Added visualization for drone %s" % drone.drone_id)
+
+func remove_drone(drone: Drone):
+	"""
+	Remove a drone's visual representation from the visualization system
+	
+	Args:
+		drone: The Drone object whose visualization should be removed
+	"""
+	if not enabled:
+		return
+	
+	# Check if this drone has a visual representation
+	if drone_meshes.has(drone.drone_id):
+		# drone_node: Node3D - the visual node to be removed (size: one node reference)
+		var drone_node = drone_meshes[drone.drone_id]
+		drone_node.queue_free()  # Remove the visual node from the scene tree
+		drone_meshes.erase(drone.drone_id)  # Remove the reference from the dictionary
+		print("Removed visualization for drone %s" % drone.drone_id)
 
 func update_drone_position(drone: Drone):
 	if not enabled:
