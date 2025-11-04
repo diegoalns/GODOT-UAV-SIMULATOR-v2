@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import networkx as nx
 import GraphBuilder
+from coordinate_constants import *
 sys.path.append(str(Path(__file__).parent))
 
 airspace_graph = GraphBuilder.create_graph()
@@ -32,8 +33,8 @@ async def websocket_handler(websocket):
                     max_range = data.get("max_range")
                     
                     print(f"Route request for drone: {drone_id} ({model})")
-                    print(f"  Start: ({start_pos['x']}, {start_pos['y']}, {start_pos['z']})")
-                    print(f"  End: ({end_pos['x']}, {end_pos['y']}, {end_pos['z']})")
+                    print(f"  Start: (lon:{start_pos['lon']}, lat:{start_pos['lat']}, alt:{start_pos['alt']})")
+                    print(f"  End: (lon:{end_pos['lon']}, lat:{end_pos['lat']}, alt:{end_pos['alt']})")
                     print(f"  Battery: {battery_percentage}%, Max Speed: {max_speed} m/s, Range: {max_range} m")
                     print(f"  Planning route...")
 
@@ -61,12 +62,12 @@ async def websocket_handler(websocket):
                         # Convert path nodes back to 3D coordinates for the drone
                         route = []
                         for i, node in enumerate(path_nodes):
-                            node_pos = airspace_graph.nodes[node]['pos']
+                            node_pos = airspace_graph.nodes[node]['pos']  # (lat, lon, alt)
                             waypoint = {
-                                "x": node_pos[0],
-                                "y": node_pos[2], 
-                                "z": node_pos[1],
-                                "altitude": node_pos[1],
+                                "x": node_pos[1],      # Python lon (East/West) → Godot X
+                                "y": node_pos[2],      # Python alt (Up/Down) → Godot Y
+                                "z": node_pos[0],      # Python lat (North/South) → Godot Z
+                                "altitude": node_pos[2],
                                 "speed": max_speed * 0.8,  # Use 80% of max speed for waypoints
                                 "description": f"Graph waypoint {i+1}"
                             }

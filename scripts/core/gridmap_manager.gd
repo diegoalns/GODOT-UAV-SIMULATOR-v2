@@ -12,8 +12,8 @@ var tile_width: float = 702.0  # Width of each tile in meters (X axis)
 var tile_height: float = 927.0  # Height of each tile in meters (Z axis)
 
 # Coordinate conversion constants (same as FlightPlanManager)
-const ORIGIN_LAT = 40.891674  # Reference latitude for coordinate conversion
-const ORIGIN_LON = -74.000032  # Reference longitude for coordinate conversion
+const ORIGIN_LAT = 40.55417343  # Reference latitude for coordinate conversion
+const ORIGIN_LON = -73.99583928  # Reference longitude for coordinate conversion
 
 func _ready():
 	# Load the mesh library resource

@@ -90,14 +90,14 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 		"drone_id": drone_id,
 		"model": model,
 		"start_position": {
-			"x": start.x,
-			"y": start.z, # in godot y is z
-			"z": start.y # in godot z is y
+			"lon": start.x,  # Godot X (East/West) → Python longitude
+			"lat": start.z,  # Godot Z (North/South) → Python latitude  
+			"alt": start.y   # Godot Y (Up/Down) → Python altitude
 		},
 		"end_position": {
-			"x": end.x, 
-			"y": end.z, # in godot y is z
-			"z": end.y # in godot z is y
+			"lon": end.x,    # Godot X (East/West) → Python longitude
+			"lat": end.z,    # Godot Z (North/South) → Python latitude
+			"alt": end.y     # Godot Y (Up/Down) → Python altitude
 		},
 		"battery_percentage": get_battery_percentage(),
 		"max_speed": max_speed,

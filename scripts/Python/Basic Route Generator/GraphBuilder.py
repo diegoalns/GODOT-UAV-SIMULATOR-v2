@@ -5,6 +5,7 @@ import plotly.graph_objects as go  # Import Plotly
 import random
 import math
 import copy
+from coordinate_constants import *
 
 # Define a function to calculate the slant range (3D distance) between two points
 def slant_range(p1, p2):
@@ -26,7 +27,12 @@ def find_closest_node(graph, target_position):
         tuple: The closest node identifier (i, j, k)
     """
     if isinstance(target_position, dict):
-        target_pos = (target_position['x'], target_position['y'], target_position['z'])
+        # Handle new coordinate format: lon, lat, alt → lat, lon, alt for graph coordinates
+        if 'lon' in target_position and 'lat' in target_position and 'alt' in target_position:
+            target_pos = (target_position['lat'], target_position['lon'], target_position['alt'])
+        else:
+            # Fallback to old format
+            target_pos = (target_position['x'], target_position['y'], target_position['z'])
     else:
         target_pos = tuple(target_position)
     
@@ -59,36 +65,22 @@ def position_to_node_coordinates(target_position, graph_bounds=None):
         tuple: Grid coordinates (i, j, k) that correspond to the position
     """
     if isinstance(target_position, dict):
-        x, y, z = target_position['x'], target_position['y'], target_position['z']
+        # Handle new coordinate format: lon, lat, alt → lat, lon, alt for graph coordinates
+        if 'lon' in target_position and 'lat' in target_position and 'alt' in target_position:
+            x, y, z = target_position['lat'], target_position['lon'], target_position['alt']
+        else:
+            # Fallback to old format
+            x, y, z = target_position['x'], target_position['y'], target_position['z']
     else:
         x, y, z = target_position
     
-    # Default graph parameters (should match create_graph function)
-    meters_per_degree = 111320
-    origin_lat_degrees = 40.55417343
-    origin_lon_degrees = -73.99583928
+    # Use shared coordinate constants
+    bounds = get_coordinate_bounds_meters()
     
-    min_lat_degree, max_lat_degree = 40.55417343, 40.6125
-    min_lon_degree, max_lon_degree = -73.99583928, -73.9292
-    min_alt_feet, max_alt_feet = 0, 300
-    
-    # Convert altitude from feet to meters
-    min_alt_meters = min_alt_feet * 0.3048
-    max_alt_meters = max_alt_feet * 0.3048
-    
-    # Define the bounding box for geographic (meters coordinates)
-    min_lat = (min_lat_degree - origin_lat_degrees) * meters_per_degree
-    max_lat = (max_lat_degree - origin_lat_degrees) * meters_per_degree
-    min_lon = (min_lon_degree - origin_lon_degrees) * meters_per_degree
-    max_lon = (max_lon_degree - origin_lon_degrees) * meters_per_degree
-    
-    # Grid dimensions
-    n_lat, n_lon, n_alt = 100, 100, 2
-    
-    # Calculate grid indices
-    lat_idx = int(np.clip((x - min_lat) / (max_lat - min_lat) * (n_lat - 1), 0, n_lat - 1))
-    lon_idx = int(np.clip((y - min_lon) / (max_lon - min_lon) * (n_lon - 1), 0, n_lon - 1))
-    alt_idx = int(np.clip((z - min_alt_meters) / (max_alt_meters - min_alt_meters) * (n_alt - 1), 0, n_alt - 1))
+    # Calculate grid indices using shared constants
+    lat_idx = int(np.clip((x - bounds['z_min']) / (bounds['z_max'] - bounds['z_min']) * (N_LAT - 1), 0, N_LAT - 1))
+    lon_idx = int(np.clip((y - bounds['x_min']) / (bounds['x_max'] - bounds['x_min']) * (N_LON - 1), 0, N_LON - 1))
+    alt_idx = int(np.clip((z - bounds['y_min']) / (bounds['y_max'] - bounds['y_min']) * (N_ALT - 1), 0, N_ALT - 1))
     
     return (lat_idx, lon_idx, alt_idx)
 
@@ -99,29 +91,8 @@ def get_graph_bounds():
     Returns:
         dict: Dictionary with min/max values for x, y, z coordinates
     """
-    meters_per_degree = 111320
-    origin_lat_degrees = 40.55417343
-    origin_lon_degrees = -73.99583928
-    
-    min_lat_degree, max_lat_degree = 40.55417343, 40.8875
-    min_lon_degree, max_lon_degree = -73.99583928, -73.5958
-    min_alt_feet, max_alt_feet = 0, 300
-    
-    # Convert altitude from feet to meters
-    min_alt_meters = min_alt_feet * 0.3048
-    max_alt_meters = max_alt_feet * 0.3048
-    
-    # Define the bounding box for geographic (meters coordinates)
-    min_lat = (min_lat_degree - origin_lat_degrees) * meters_per_degree
-    max_lat = (max_lat_degree - origin_lat_degrees) * meters_per_degree
-    min_lon = (min_lon_degree - origin_lon_degrees) * meters_per_degree
-    max_lon = (max_lon_degree - origin_lon_degrees) * meters_per_degree
-    
-    return {
-        'x_min': min_lat, 'x_max': max_lat,
-        'y_min': min_lon, 'y_max': max_lon, 
-        'z_min': min_alt_meters, 'z_max': max_alt_meters
-    }
+    # Use shared coordinate constants
+    return get_coordinate_bounds_meters()
 
 def debug_position_mapping(graph, position):
     """
@@ -136,7 +107,12 @@ def debug_position_mapping(graph, position):
     calculated_node = position_to_node_coordinates(position)
     
     if isinstance(position, dict):
-        pos = (position['x'], position['y'], position['z'])
+        # Handle new coordinate format
+        if 'lon' in position and 'lat' in position and 'alt' in position:
+            pos = (position['lat'], position['lon'], position['alt'])
+        else:
+            # Fallback to old format
+            pos = (position['x'], position['y'], position['z'])
     else:
         pos = position
     
@@ -155,26 +131,19 @@ def debug_position_mapping(graph, position):
     return closest_node
 
 def create_graph():
-    meters_per_degree = 111320  # Approximate meters per degree
-    #Define the bounding box for geographic coordinates (Degrees)
-    min_lat_degree, max_lat_degree = 40.55417343, 40.8875
-    min_lon_degree, max_lon_degree = -73.99583928, -73.5958
-    origin_lat_degrees = 40.55417343
-    origin_lon_degrees = -73.99583928
-    min_alt_feet, max_alt_feet = 50, 350
-
-    # Convert altitude from feet to meters
-    min_alt_meters = min_alt_feet * 0.3048
-    max_alt_meters = max_alt_feet * 0.3048
-
-    # Define the bounding box for geographic (meters coordinates)
-    min_lat = (min_lat_degree - origin_lat_degrees) * meters_per_degree
-    max_lat = (max_lat_degree - origin_lat_degrees) * meters_per_degree
-    min_lon = (min_lon_degree - origin_lon_degrees) * meters_per_degree
-    max_lon = (max_lon_degree - origin_lon_degrees) * meters_per_degree
-
-    # Define grid dimensions
-    n_lat, n_lon, n_alt = 100, 100, 3
+    # Use shared coordinate constants
+    bounds = get_coordinate_bounds_meters()
+    
+    # Extract bounds for convenience
+    min_lat = bounds['z_min']
+    max_lat = bounds['z_max']
+    min_lon = bounds['x_min']
+    max_lon = bounds['x_max']
+    min_alt_meters = bounds['y_min']
+    max_alt_meters = bounds['y_max']
+    
+    # Use shared grid dimensions
+    n_lat, n_lon, n_alt = N_LAT, N_LON, N_ALT
 
     # Conversion to position meters ()
 
