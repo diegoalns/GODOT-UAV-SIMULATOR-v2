@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dprulpq6rxaux"
+
+[deps]
+
+files=["res://scripts/Python/Generic 3D Lattice OSMNX Map/Filtered_FAA_UAS_FacilityMap_Data_LGA.LATITUDE.translation", "res://scripts/Python/Generic 3D Lattice OSMNX Map/Filtered_FAA_UAS_FacilityMap_Data_LGA.LONGITUDE.translation"]
+
+source_file="res://scripts/Python/Generic 3D Lattice OSMNX Map/Filtered_FAA_UAS_FacilityMap_Data_LGA.csv"
+dest_files=["res://scripts/Python/Generic 3D Lattice OSMNX Map/Filtered_FAA_UAS_FacilityMap_Data_LGA.LATITUDE.translation", "res://scripts/Python/Generic 3D Lattice OSMNX Map/Filtered_FAA_UAS_FacilityMap_Data_LGA.LONGITUDE.translation"]
+
+[params]
+
+compress=true
+delimiter=0

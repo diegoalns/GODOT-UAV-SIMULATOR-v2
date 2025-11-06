@@ -1,0 +1,50 @@
+# Godot 4+ specific ignores
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+
+# Imported translations (automatically generated)
+*.translation
+
+# Mono-specific ignores (if using C#)
+.mono/
+data_*/
+mono_crash.*.json
+
+# System/editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pkl
+
+# Logs and temporary files
+*.log
+logs/*.log
+
+# IDE specific
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build files
+*.exe
+*.pck
+*.zip
+*.dmg
+*.app
+
+# Environment files
+.env
+.env.local
+

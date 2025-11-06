@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bjahkvsxws0m5"
+
+[deps]
+
+files=["res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DronePortID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DroneModel.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.EstimatedFlightTime.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.Ceiling.translation"]
+
+source_file="res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.csv"
+dest_files=["res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DronePortID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DroneModel.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.EstimatedFlightTime.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.Ceiling.translation"]
+
+[params]
+
+compress=true
+delimiter=0

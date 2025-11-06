@@ -1,5 +1,0 @@
-[33m2811fb4[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Implement GridMap terrain system with 3D elevation mapping
-[33m6d14832[m First WebSocket Capability
-[33m5eeb276[m Added more data in logging
-[33m0564d6a[m Choose which Drone Port visualization, upload diferents drone ports
-[33m84e582d[m Camera navigation with coordinates converted to meters

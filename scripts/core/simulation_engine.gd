@@ -14,7 +14,6 @@ var speed_multiplier: float = 1.0
 var time_step: float = 1.0
 var real_runtime: float = 0.0
 var headless_mode: bool = false
-var plans: Array = [] 
 var ui: SimpleUI  # Store UI instance for access in _physics_process
 
 func _ready():
@@ -26,11 +25,10 @@ func _ready():
 	# Connect systems
 	drone_manager.set_visualization_system(visualization_system)
 	
+	# Load flight plans into queue
 	flight_plan_manager.load_flight_plans()
 
 	await get_tree().process_frame
-	
-	plans = flight_plan_manager.get_flight_plans()
 	
 	# Add drone ports to visualization
 	var ports = flight_plan_manager.get_drone_ports()
@@ -74,24 +72,27 @@ func _physics_process(delta: float):
 	if not running:
 		return
 		
-	# Simulation time and real runtime calculation
+	# Simulation time and real runtime calculation - float type updated every physics frame
 	simulation_time += time_step * speed_multiplier
 	current_simulation_time = simulation_time  # Update static reference for global access
 	real_runtime += delta
 	
-	# Launch the drones when ETD - using range comparison to handle floating point precision issues
-	for plan in plans:
-		# Use range comparison instead of exact equality to prevent multiple spawns due to floating point precision
-		# Check if current time has passed the ETD and drone hasn't been created yet
-		if not plan.created and plan.etd_seconds <= simulation_time and plan.etd_seconds > (simulation_time - time_step * speed_multiplier):
-			plan.created = true
-			var origin = flight_plan_manager.latlon_to_position(plan.origin_lat, plan.origin_lon)
-			var destination = flight_plan_manager.latlon_to_position(plan.dest_lat, plan.dest_lon)
-			
-			# Add debug logging to track drone creation and detect potential duplicates
-			print("Creating drone %s at simulation time %.2f (ETD: %.2f)" % [plan.id, simulation_time, plan.etd_seconds])
-			
-			drone_manager.create_test_drone(plan.id, origin, destination, plan.model)
+	# Queue-based drone launching - efficient O(k) where k = number of ready plans
+	# Get all flight plans ready to launch at current simulation time
+	# This function automatically removes processed plans from the queue
+	var plans_to_launch = flight_plan_manager.get_next_pending_plans(simulation_time)
+	
+	# Launch each ready drone - Array of Dictionary objects
+	for plan in plans_to_launch:
+		# Convert latitude/longitude coordinates to Vector3 world positions
+		var origin = flight_plan_manager.latlon_to_position(plan.origin_lat, plan.origin_lon)
+		var destination = flight_plan_manager.latlon_to_position(plan.dest_lat, plan.dest_lon)
+		
+		# Debug logging to track drone creation with timing information
+		print("Creating drone %s at simulation time %.2f (ETD: %.2f)" % [plan.id, simulation_time, plan.etd_seconds])
+		
+		# Create and initialize the drone with route request to Python server
+		drone_manager.create_test_drone(plan.id, origin, destination, plan.model)
 	
 	# Update all created drones
 	drone_manager.update_all(time_step * speed_multiplier)
