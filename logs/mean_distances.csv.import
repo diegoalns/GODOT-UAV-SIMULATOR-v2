@@ -3,11 +3,13 @@
 importer="csv_translation"
 type="Translation"
 uid="uid://c76okxh6gglth"
-valid=false
 
 [deps]
 
+files=["res://logs/mean_distances.Mean.translation"]
+
 source_file="res://logs/mean_distances.csv"
+dest_files=["res://logs/mean_distances.Mean.translation"]
 
 [params]
 

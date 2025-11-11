@@ -124,7 +124,15 @@ func load_terrain_data():
 	grid_size_z = lat_list.size()  # Number of cells in Z direction (latitude)
 	grid_size_x = lon_list.size()  # Number of cells in X direction (longitude)
 	
+	# CRITICAL: Calculate the world position of the first CSV grid cell (grid 0,0)
+	# This is needed to offset the GridMap so grid(0,0) aligns with the CSV coordinate
+	var min_lat = lat_list[0]  # First latitude (southernmost) - corresponds to grid Z=0
+	var min_lon = lon_list[0]  # First longitude (westernmost) - corresponds to grid X=0
+	var grid_origin_world_pos = latlon_to_world_position(min_lat, min_lon)  # World position of grid(0,0)
+	
 	print("│ Grid dimensions: %d × %d cells (X × Z)" % [grid_size_x, grid_size_z])
+	print("│ Grid origin CSV: (%.8f, %.8f)" % [min_lat, min_lon])
+	print("│ Grid origin world: %s" % grid_origin_world_pos)
 	
 	# Create bidirectional mappings: coordinate ↔ grid index
 	for i in range(lat_list.size()):
@@ -159,6 +167,17 @@ func load_terrain_data():
 		if gridmap_node:
 			gridmap_node.cell_size = Vector3(tile_width, 0.5, tile_height)
 			print("│   GridMap cell_size updated: %s" % gridmap_node.cell_size)
+			
+			# CRITICAL FIX: Offset GridMap position so grid(0,0) aligns with first CSV coordinate
+			# GridMap places tiles centered at grid coordinates relative to its origin
+			# We want grid(0,0) tile center to be at grid_origin_world_pos
+			# Tile center offset: tiles are centered, so grid(0,0) center is at (tile_width/2, 0, tile_height/2)
+			var tile_center_offset = Vector3(tile_width * 0.5, 0.0, tile_height * 0.5)
+			var gridmap_offset = grid_origin_world_pos - tile_center_offset
+			gridmap_node.global_position = gridmap_offset
+			
+			print("│   GridMap position offset: %s" % gridmap_offset)
+			print("│   This ensures grid(0,0) tile center = CSV coordinate world position")
 	else:
 		push_warning("GridMapManager: Not enough data to calculate tile dimensions")
 	
@@ -196,9 +215,47 @@ func load_terrain_data():
 		points_mapped += 1
 	
 	print("│   Mapped: %d CSV points to grid cells" % points_mapped)
-	print("│   Method: Direct coordinate-to-index lookup (ZERO offset)")
+	print("│   Method: Direct coordinate-to-index lookup with GridMap offset")
+	print("├" + "─".repeat(80))
+	
+	# VERIFICATION: Test alignment for first CSV point
+	if temp_data.size() > 0:
+		var test_point = temp_data[0]
+		var test_lat = test_point["latitude"]
+		var test_lon = test_point["longitude"]
+		var test_lat_key = int(round(test_lat * 100000))
+		var test_lon_key = int(round(test_lon * 100000))
+		var test_grid_x = lon_to_grid_x[test_lon_key]
+		var test_grid_z = lat_to_grid_z[test_lat_key]
+		
+		# Calculate tile center world position
+		var tile_center_world = gridmap_node.global_position + Vector3(
+			test_grid_x * tile_width + tile_width * 0.5,
+			0.0,
+			test_grid_z * tile_height + tile_height * 0.5
+		)
+		
+		# Calculate CSV coordinate world position
+		var csv_world = latlon_to_world_position(test_lat, test_lon)
+		
+		# Calculate offset
+		var offset = (tile_center_world - csv_world).length()
+		
+		print("│ 🔍 ALIGNMENT VERIFICATION:")
+		print("│   Test CSV point: (%.8f, %.8f)" % [test_lat, test_lon])
+		print("│   Mapped to grid: (%d, %d)" % [test_grid_x, test_grid_z])
+		print("│   CSV world pos: %s" % csv_world)
+		print("│   Tile center: %s" % tile_center_world)
+		print("│   Offset: %.3f meters" % offset)
+		if offset < 1.0:
+			print("│   ✅ PERFECT ALIGNMENT (< 1m offset)")
+		elif offset < 10.0:
+			print("│   ⚠️ Good alignment (< 10m offset)")
+		else:
+			print("│   ❌ Alignment issue detected (> 10m offset)")
+	
 	print("└" + "─".repeat(80))
-	print("✅ Terrain data loaded with PERFECT CSV-to-grid alignment\n")
+	print("✅ Terrain data loaded with GridMap position offset applied\n")
 	
 	return true
 
@@ -340,17 +397,22 @@ func world_position_to_grid_coords_direct(world_pos: Vector3) -> Vector3i:
 	"""
 	Convert world position to grid coordinates using the new direct mapping system
 	This uses the calculated tile dimensions to find the correct grid cell
+	Accounts for GridMap position offset
 	@param world_pos: Vector3 - World position in meters
 	@return Vector3i - Grid coordinates (returns Vector3i(-1,-1,-1) if out of bounds)
 	"""
-	if grid_size_x == 0 or grid_size_z == 0:
+	if grid_size_x == 0 or grid_size_z == 0 or not gridmap_node:
 		push_warning("GridMapManager: Grid not initialized")
 		return Vector3i(-1, -1, -1)
 	
-	# Calculate which grid cell this world position falls into
+	# Convert world position to position relative to GridMap origin
+	var gridmap_pos = gridmap_node.global_position
+	var relative_pos = world_pos - gridmap_pos
+	
+	# Calculate which grid cell this position falls into
 	# Using floor to get the cell the position is actually in
-	var grid_x = int(floor(world_pos.x / tile_width))
-	var grid_z = int(floor(world_pos.z / tile_height))
+	var grid_x = int(floor(relative_pos.x / tile_width))
+	var grid_z = int(floor(relative_pos.z / tile_height))
 	
 	# Check bounds
 	if grid_x < 0 or grid_x >= grid_size_x or grid_z < 0 or grid_z >= grid_size_z:
@@ -367,15 +429,20 @@ func get_terrain_altitude_at_position(world_pos: Vector3) -> float:
 	"""
 	Get the terrain altitude at a specific world position using grid-based lookup
 	This is much faster than the old method (O(1) vs O(n)) thanks to direct grid mapping
+	Accounts for GridMap position offset
 	@param world_pos: Vector3 - World position to query
 	@return float - Altitude value at that position in feet, or -1 if not found
 	"""
-	if grid_to_altitude.is_empty():
+	if grid_to_altitude.is_empty() or not gridmap_node:
 		return -1.0
 	
+	# Convert world position to position relative to GridMap origin
+	var gridmap_pos = gridmap_node.global_position
+	var relative_pos = world_pos - gridmap_pos
+	
 	# Calculate which grid cell this position is in
-	var grid_x = int(floor(world_pos.x / tile_width))
-	var grid_z = int(floor(world_pos.z / tile_height))
+	var grid_x = int(floor(relative_pos.x / tile_width))
+	var grid_z = int(floor(relative_pos.z / tile_height))
 	
 	# Check if within grid bounds
 	if grid_x < 0 or grid_x >= grid_size_x or grid_z < 0 or grid_z >= grid_size_z:

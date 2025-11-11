@@ -3,11 +3,13 @@
 importer="csv_translation"
 type="Translation"
 uid="uid://1y84bwjpq2fs"
-valid=false
 
 [deps]
 
+files=["res://logs/collision_log.Event.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Distance.translation", "res://logs/collision_log.Collision.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation"]
+
 source_file="res://logs/collision_log.csv"
+dest_files=["res://logs/collision_log.Event.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Distance.translation", "res://logs/collision_log.Collision.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation", "res://logs/collision_log.Drone.translation"]
 
 [params]
 

@@ -1,53 +1,53 @@
 ea4bc82a6ad023ab7ee23ee620429895
-::res://::1762452402
+::res://::1762883704
 drone_models_specifications.txt::TextFile::-1::1762345060::0::1::::<><>::
+GRIDMAP_ALIGNMENT_FIX.md::TextFile::-1::1762883809::0::1::::<><>::
 icon.svg::CompressedTexture2D::5111841621436024482::1747857330::1747857339::1::::<><>::
-PROJECT_FLOWCHART.txt::TextFile::-1::1748993940::0::1::::<><>::
-TERRAIN_SYSTEM_README.md::TextFile::-1::1757909419::0::1::::<><>::
-::res://data/::1762447053
+README.md::TextFile::-1::1762455545::0::1::::<><>::
+::res://data/::1762879548
 Filtered_FAA_UAS_FacilityMap_Data_LGA.csv::Translation::8893204622106946886::1747231750::1748385893::1::::<><>::
 Filtered_FAA_UAS_FacilityMap_Data_LGA.LATITUDE.translation::OptimizedTranslation::2864721037168408583::1748385893::0::1::::<><>::
 Filtered_FAA_UAS_FacilityMap_Data_LGA.LONGITUDE.translation::OptimizedTranslation::3123969665722870141::1748385893::0::1::::<><>::
 NYC_Streets.json::JSON::-1::1759110299::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.Ceiling.translation::OptimizedTranslation::1294334773178894234::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.csv::Translation::3018564285195790186::1761762413::1762284572::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationLat.translation::OptimizedTranslation::6227540764070148446::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationLon.translation::OptimizedTranslation::6618499926787720162::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DestinationNodeID.translation::OptimizedTranslation::6445252569316745279::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DroneModel.translation::OptimizedTranslation::2572629733568664494::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.DronePortID.translation::OptimizedTranslation::4475469437481397855::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.EstimatedFlightTime.translation::OptimizedTranslation::1446406601984850141::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.ETD.translation::OptimizedTranslation::2792671570318961855::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginLat.translation::OptimizedTranslation::242528766667935608::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginLon.translation::OptimizedTranslation::7615372507546279065::1762284572::0::1::::<><>::
-Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.OriginNodeID.translation::OptimizedTranslation::6433229337000886225::1762284572::0::1::::<><>::
-::res://logs/::1762447053
-collision_log.Collision.translation::OptimizedTranslation::5332920075845947560::1762280777::0::1::::<><>::
-collision_log.csv::Translation::1876510536409483320::1762283086::1762283074::0::::<><>::
-collision_log.Distance.translation::OptimizedTranslation::5578364486354418242::1762280777::0::1::::<><>::
-collision_log.Drone.translation::OptimizedTranslation::3987559128720838061::1762280777::0::1::::<><>::
-collision_log.Event.translation::OptimizedTranslation::4884704773431098948::1762280777::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.csv::Translation::5238976032644085176::1762879350::1762879548::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.DronePortID.translation::OptimizedTranslation::4153975050259698894::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.ETD.translation::OptimizedTranslation::7227279402167480693::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.OriginLat.translation::OptimizedTranslation::8015157214267412042::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.OriginLon.translation::OptimizedTranslation::2231662717166304300::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.OriginNodeID.translation::OptimizedTranslation::8703814367416422671::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.DestinationLat.translation::OptimizedTranslation::1659675951095551723::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.DestinationLon.translation::OptimizedTranslation::806147911847505911::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.DestinationNodeID.translation::OptimizedTranslation::1491855236974262357::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.DroneModel.translation::OptimizedTranslation::1122902103624766160::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.EstimatedFlightTime.translation::OptimizedTranslation::5450912091295842539::1762879548::0::1::::<><>::
+Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.Ceiling.translation::OptimizedTranslation::6397492070235701180::1762879548::0::1::::<><>::
+::res://logs/::1762884130
+collision_log.Collision.translation::OptimizedTranslation::5332920075845947560::1762884404::0::1::::<><>::
+collision_log.csv::Translation::1876510536409483320::1762884368::1762884404::1::::<><>::
+collision_log.Distance.translation::OptimizedTranslation::5578364486354418242::1762884404::0::1::::<><>::
+collision_log.Drone.translation::OptimizedTranslation::3987559128720838061::1762884404::0::1::::<><>::
+collision_log.Event.translation::OptimizedTranslation::4884704773431098948::1762884403::0::1::::<><>::
 collision_log_1.Collision.translation::OptimizedTranslation::6337266570480979105::1758288247::0::1::::<><>::
 collision_log_1.csv::Translation::641148260765501688::1758193200::1758288247::1::::<><>::
 collision_log_1.Distance.translation::OptimizedTranslation::2989914626587655250::1758288247::0::1::::<><>::
 collision_log_1.Drone.translation::OptimizedTranslation::7314728197618613286::1758288247::0::1::::<><>::
 collision_log_1.Event.translation::OptimizedTranslation::8168881508084746834::1758288247::0::1::::<><>::
-mean_distances.csv::Translation::7083749190284320489::1762283088::1762283074::0::::<><>::
-mean_distances.Mean.translation::OptimizedTranslation::2966062713584379921::1762280777::0::1::::<><>::
+mean_distances.csv::Translation::7083749190284320489::1762884403::1762884404::1::::<><>::
+mean_distances.Mean.translation::OptimizedTranslation::2966062713584379921::1762884403::0::1::::<><>::
 mean_distances_1.csv::Translation::4204221495072240680::1758193240::1758288247::1::::<><>::
 mean_distances_1.Mean.translation::OptimizedTranslation::4725293479750939219::1758288247::0::1::::<><>::
-simple_log.Completed.translation::OptimizedTranslation::6269027540618558298::1762280777::0::1::::<><>::
-simple_log.csv::Translation::8190805183640292227::1762283088::1762283074::0::::<><>::
-simple_log.Destination Lat.translation::OptimizedTranslation::4916082832230895542::1762280777::0::1::::<><>::
-simple_log.Destination Lon.translation::OptimizedTranslation::7897791232402064925::1762280777::0::1::::<><>::
-simple_log.DroneID.translation::OptimizedTranslation::8817152069244723032::1762280777::0::1::::<><>::
-simple_log.Origin Lat.translation::OptimizedTranslation::3794580973170127382::1762280777::0::1::::<><>::
-simple_log.Origin Lon.translation::OptimizedTranslation::4093308513435852129::1762280777::0::1::::<><>::
-simple_log.Target position.translation::OptimizedTranslation::1373810805255998783::1762280777::0::1::::<><>::
-simple_log.Target Speed.translation::OptimizedTranslation::7297941627680609748::1762280777::0::1::::<><>::
-simple_log.X.translation::OptimizedTranslation::8580034008191403946::1762280777::0::1::::<><>::
-simple_log.Y.translation::OptimizedTranslation::612703318248747904::1762280777::0::1::::<><>::
-simple_log.Z.translation::OptimizedTranslation::2796822507588116737::1762280777::0::1::::<><>::
+simple_log.Completed.translation::OptimizedTranslation::6269027540618558298::1762884405::0::1::::<><>::
+simple_log.csv::Translation::8190805183640292227::1762884403::1762884405::1::::<><>::
+simple_log.Destination Lat.translation::OptimizedTranslation::4916082832230895542::1762884405::0::1::::<><>::
+simple_log.Destination Lon.translation::OptimizedTranslation::7897791232402064925::1762884405::0::1::::<><>::
+simple_log.DroneID.translation::OptimizedTranslation::8817152069244723032::1762884404::0::1::::<><>::
+simple_log.Origin Lat.translation::OptimizedTranslation::3794580973170127382::1762884404::0::1::::<><>::
+simple_log.Origin Lon.translation::OptimizedTranslation::4093308513435852129::1762884405::0::1::::<><>::
+simple_log.Target position.translation::OptimizedTranslation::1373810805255998783::1762884404::0::1::::<><>::
+simple_log.Target Speed.translation::OptimizedTranslation::7297941627680609748::1762884404::0::1::::<><>::
+simple_log.X.translation::OptimizedTranslation::8580034008191403946::1762884404::0::1::::<><>::
+simple_log.Y.translation::OptimizedTranslation::612703318248747904::1762884404::0::1::::<><>::
+simple_log.Z.translation::OptimizedTranslation::2796822507588116737::1762884404::0::1::::<><>::
 simple_log_1.Completed.translation::OptimizedTranslation::8282137730382139862::1758288249::0::1::::<><>::
 simple_log_1.csv::Translation::6867473566007207290::1758193240::1758288249::1::::<><>::
 simple_log_1.Destination Lat.translation::OptimizedTranslation::10054082322786210::1758288249::0::1::::<><>::
@@ -68,53 +68,53 @@ cell_library.meshlib::MeshLibrary::8805812980352744974::1758314637::0::1::::<><>
 ::res://scenes/drones/::1762447056
 ::res://scenes/GridMap/::1762447053
 terrain_gridmap.tscn::PackedScene::8659059462018564735::1757962845::0::1::::<><>::uid://dxpupn7gkp8yc::::res://resources/Meshs/cell_library.meshlib
-::res://scenes/main/::1762447053
-main.tscn::PackedScene::4686429957449297552::1762283051::0::1::::<><>::res://scripts/core/simulation_engine.gd
+::res://scenes/main/::1762884134
+main.tscn::PackedScene::4686429957449297552::1762884134::0::1::::<><>::res://scripts/core/simulation_engine.gd
 ::res://scenes/ui/::1762447053
 simple_ui.tscn::PackedScene::6728176285175873342::1758290734::0::1::::<><>::
 ::res://scripts/::1762447056
-::res://scripts/core/::1762447053
-drone_manager.gd::GDScript::-1::1757966257::0::1::::DroneManager<>Node<>::
-flight_plan_manager.gd::GDScript::-1::1762452268::0::1::::FlightPlanManager<>Node<>::
-gridmap_manager.gd::GDScript::-1::1762279803::0::1::::GridMapManager<>Node<>::
+::res://scripts/core/::1762865582
+drone_manager.gd::GDScript::-1::1762803160::0::1::::DroneManager<>Node<>::
+flight_plan_manager.gd::GDScript::-1::1762879523::0::1::::FlightPlanManager<>Node<>::
+gridmap_manager.gd::GDScript::-1::1762884085::0::1::::GridMapManager<>Node<>::
 simple_logger.gd::GDScript::-1::1757952989::0::1::::SimpleLogger<>Node<>::
-simulation_engine.gd::GDScript::-1::1757966257::0::1::::SimulationEngine<>Node<>::
+simulation_engine.gd::GDScript::-1::1762800458::0::1::::SimulationEngine<>Node<>::
 visualization_system.gd::GDScript::-1::1758314637::0::1::::VisualizationSystem<>Node3D<>::
-WebSocketManager.gd::GDScript::-1::1758048884::0::1::::<>Node<>::
-::res://scripts/drone/::1762447053
-drone.gd::GDScript::-1::1762394816::0::1::::Drone<>Area3D<>::
+WebSocketManager.gd::GDScript::-1::1762803160::0::1::::<>Node<>::
+::res://scripts/drone/::1762870720
+drone.gd::GDScript::-1::1762870720::0::1::::Drone<>Area3D<>::
 ::res://scripts/Python/::1762447056
-::res://scripts/Python/Basic Route Generator/::1762447056
+::res://scripts/Python/Basic Route Generator/::1762865581
 ::res://scripts/Python/Basic Route Generator/__pycache__/::1762447056
-::res://scripts/Python/Generic 3D Lattice OSMNX Map/::1762447056
-36-NY-NewYork-Brooklyn.csv::Translation::6706847423357842034::1760128586::1762452403::1::::<><>::
-Filtered_FAA_UAS_FacilityMap_Data_LGA.csv::Translation::8248423925056331623::1747231750::1762452403::1::::<><>::
-requirements_streamlit.txt::TextFile::-1::1761078184::0::1::::<><>::
-Filtered_FAA_UAS_FacilityMap_Data_LGA.LATITUDE.translation::OptimizedTranslation::8068050317237319719::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.VERIFICATION.translation::OptimizedTranslation::7840019816011627618::1762452403::0::1::::<><>::
-Filtered_FAA_UAS_FacilityMap_Data_LGA.LONGITUDE.translation::OptimizedTranslation::7864324389628876504::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.COUNTRY.translation::OptimizedTranslation::514547509845991588::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.STATE.translation::OptimizedTranslation::9176809496151415534::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.CITY.translation::OptimizedTranslation::3650347225739570875::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.LATITUDE.translation::OptimizedTranslation::411099963989742502::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.LONGITUDE.translation::OptimizedTranslation::7390662999379018799::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.OBSTACLE.translation::OptimizedTranslation::1254822915343760195::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.QUANTITY.translation::OptimizedTranslation::5840525539616761863::1762452403::0::1::::<><>::
+::res://scripts/Python/Generic 3D Lattice OSMNX Map/::1762452403
+36-NY-NewYork-Brooklyn.ACTION.translation::OptimizedTranslation::6458443170914031287::1762452403::0::1::::<><>::
 36-NY-NewYork-Brooklyn.AGL_HT.translation::OptimizedTranslation::445082923391034424::1762452403::0::1::::<><>::
 36-NY-NewYork-Brooklyn.AMSL_HT.translation::OptimizedTranslation::1259483801087422490::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.LIGHTING.translation::OptimizedTranslation::6997100946169915708::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.HORIZONTAL.translation::OptimizedTranslation::3165668604835105136::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.VERTICAL.translation::OptimizedTranslation::5834738376277718223::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.MARK.translation::OptimizedTranslation::8280821464818930595::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.CITY.translation::OptimizedTranslation::3650347225739570875::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.COUNTRY.translation::OptimizedTranslation::514547509845991588::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.csv::Translation::6706847423357842034::1760128586::1762452403::1::::<><>::
 36-NY-NewYork-Brooklyn.FAA.translation::OptimizedTranslation::780457125172251539::1762452403::0::1::::<><>::
-36-NY-NewYork-Brooklyn.ACTION.translation::OptimizedTranslation::6458443170914031287::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.HORIZONTAL.translation::OptimizedTranslation::3165668604835105136::1762452403::0::1::::<><>::
 36-NY-NewYork-Brooklyn.JULIAN.translation::OptimizedTranslation::1609317844157356447::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.LATITUDE.translation::OptimizedTranslation::411099963989742502::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.LIGHTING.translation::OptimizedTranslation::6997100946169915708::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.LONGITUDE.translation::OptimizedTranslation::7390662999379018799::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.MARK.translation::OptimizedTranslation::8280821464818930595::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.OBSTACLE.translation::OptimizedTranslation::1254822915343760195::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.QUANTITY.translation::OptimizedTranslation::5840525539616761863::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.STATE.translation::OptimizedTranslation::9176809496151415534::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.VERIFICATION.translation::OptimizedTranslation::7840019816011627618::1762452403::0::1::::<><>::
+36-NY-NewYork-Brooklyn.VERTICAL.translation::OptimizedTranslation::5834738376277718223::1762452403::0::1::::<><>::
+Filtered_FAA_UAS_FacilityMap_Data_LGA.csv::Translation::8248423925056331623::1747231750::1762452403::1::::<><>::
+Filtered_FAA_UAS_FacilityMap_Data_LGA.LATITUDE.translation::OptimizedTranslation::8068050317237319719::1762452403::0::1::::<><>::
+Filtered_FAA_UAS_FacilityMap_Data_LGA.LONGITUDE.translation::OptimizedTranslation::7864324389628876504::1762452403::0::1::::<><>::
+requirements_streamlit.txt::TextFile::-1::1761078184::0::1::::<><>::
 ::res://scripts/Python/Generic 3D Lattice OSMNX Map/cache/::1762447056
 7d15340c87b5b8082a601674b3109ec8a86aeb36.json::JSON::-1::1761077197::0::1::::<><>::
 78f378fcb701c8561ef2b55b6a436ef1c130f1d5.json::JSON::-1::1761076938::0::1::::<><>::
 f8ad5909d94759a29b1408a0f61857f301905332.json::JSON::-1::1761078221::0::1::::<><>::
-::res://scripts/Python/Route Gen Cooperative A_Star/::1762447056
-::res://scripts/Python/Route Gen Cooperative A_Star/__pycache__/::1762447056
+::res://scripts/Python/Route Gen Cooperative A_Star/::1762865582
+::res://scripts/Python/Route Gen Cooperative A_Star/__pycache__/::1762870716
 ::res://scripts/ui/::1762447053
 simple_ui.gd::GDScript::-1::1748455771::0::1::::SimpleUI<>Control<>::
 ::res://scripts/utils/::1762447053
