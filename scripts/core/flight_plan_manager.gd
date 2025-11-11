@@ -136,7 +136,8 @@ func latlon_to_position(lat: float, lon: float) -> Vector3:
 	var meters_per_deg_lat = 111320.0
 	var meters_per_deg_lon = 111320.0 * cos(deg_to_rad(ORIGIN_LAT))
 	var x = (lon - ORIGIN_LON) * meters_per_deg_lon
-	var z = (lat - ORIGIN_LAT) * meters_per_deg_lat
+	# Invert Z calculation: higher latitude (north) → negative Z (north in Godot), lower latitude (south) → positive Z (south in Godot)
+	var z = (ORIGIN_LAT - lat) * meters_per_deg_lat
 	return Vector3(x, 0, z)
 
 func get_drone_ports() -> Dictionary:

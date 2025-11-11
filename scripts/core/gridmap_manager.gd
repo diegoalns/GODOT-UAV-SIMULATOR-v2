@@ -124,11 +124,14 @@ func load_terrain_data():
 	grid_size_z = lat_list.size()  # Number of cells in Z direction (latitude)
 	grid_size_x = lon_list.size()  # Number of cells in X direction (longitude)
 	
-	# CRITICAL: Calculate the world position of the first CSV grid cell (grid 0,0)
-	# This is needed to offset the GridMap so grid(0,0) aligns with the CSV coordinate
-	var min_lat = lat_list[0]  # First latitude (southernmost) - corresponds to grid Z=0
+	# CRITICAL: Calculate the world position of grid cells for GridMap offset
+	# GridMap's Z axis increases south (positive Z), but our grid Z increases north (higher latitude)
+	# So we need to invert: GridMap grid(0,0) = northernmost, GridMap grid(0,max) = southernmost
+	var min_lat = lat_list[0]  # First latitude (southernmost) - corresponds to our grid Z=0
+	var max_lat = lat_list[lat_list.size() - 1]  # Last latitude (northernmost) - corresponds to our grid Z=max
 	var min_lon = lon_list[0]  # First longitude (westernmost) - corresponds to grid X=0
-	var grid_origin_world_pos = latlon_to_world_position(min_lat, min_lon)  # World position of grid(0,0)
+	var grid_origin_world_pos = latlon_to_world_position(min_lat, min_lon)  # World position of southernmost point (our grid Z=0)
+	var grid_north_world_pos = latlon_to_world_position(max_lat, min_lon)  # World position of northernmost point (our grid Z=max)
 	
 	print("│ Grid dimensions: %d × %d cells (X × Z)" % [grid_size_x, grid_size_z])
 	print("│ Grid origin CSV: (%.8f, %.8f)" % [min_lat, min_lon])
@@ -168,16 +171,18 @@ func load_terrain_data():
 			gridmap_node.cell_size = Vector3(tile_width, 0.5, tile_height)
 			print("│   GridMap cell_size updated: %s" % gridmap_node.cell_size)
 			
-			# CRITICAL FIX: Offset GridMap position so grid(0,0) aligns with first CSV coordinate
-			# GridMap places tiles centered at grid coordinates relative to its origin
-			# We want grid(0,0) tile center to be at grid_origin_world_pos
-			# Tile center offset: tiles are centered, so grid(0,0) center is at (tile_width/2, 0, tile_height/2)
-			var tile_center_offset = Vector3(tile_width * 0.5, 0.0, tile_height * 0.5)
+			# CRITICAL FIX: Offset GridMap position accounting for Z-axis inversion
+			# GridMap's Z increases south (positive Z), but our grid Z increases north
+			# We invert grid Z when placing tiles, so GridMap grid(0,0) = northernmost, GridMap grid(0,max) = southernmost
+			# GridMap grid(0, grid_size_z-1) center should be at southernmost world position (grid_origin_world_pos)
+			# GridMap grid(0, 0) center should be at northernmost world position (grid_north_world_pos)
+			# Tile center offset: tiles are centered, so grid(0, grid_size_z-1) center is at (tile_width/2, 0, (grid_size_z-1)*tile_height + tile_height/2)
+			var tile_center_offset = Vector3(tile_width * 0.5, 0.0, (grid_size_z - 1) * tile_height + tile_height * 0.5)
 			var gridmap_offset = grid_origin_world_pos - tile_center_offset
 			gridmap_node.global_position = gridmap_offset
 			
 			print("│   GridMap position offset: %s" % gridmap_offset)
-			print("│   This ensures grid(0,0) tile center = CSV coordinate world position")
+			print("│   GridMap grid(0,0) = northernmost, GridMap grid(0,%d) = southernmost" % (grid_size_z - 1))
 	else:
 		push_warning("GridMapManager: Not enough data to calculate tile dimensions")
 	
@@ -296,7 +301,8 @@ func latlon_to_world_position(latitude: float, longitude: float) -> Vector3:
 	var meters_per_deg_lon = 111320.0 * cos(deg_to_rad(ORIGIN_LAT))  # Meters per degree longitude at this latitude
 	
 	var x = (longitude - ORIGIN_LON) * meters_per_deg_lon  # X position in meters
-	var z = (latitude - ORIGIN_LAT) * meters_per_deg_lat   # Z position in meters (FIXED: was inverted)
+	# Invert Z calculation: higher latitude (north) → negative Z (north in Godot), lower latitude (south) → positive Z (south in Godot)
+	var z = (ORIGIN_LAT - latitude) * meters_per_deg_lat   # Z position in meters (FIXED: correctly inverted)
 	
 	return Vector3(x, 0, z)
 
@@ -354,13 +360,18 @@ func populate_gridmap():
 		var altitude_meters = altitude * 0.3048  # Feet to meters conversion (float)
 		var grid_y = int(altitude_meters)         # Grid Y coordinate (int)
 		
-		# Create Vector3i for grid position using DIRECT indices (no conversion!)
-		var grid_pos = Vector3i(grid_x, grid_y, grid_z)
+		# Invert grid Z coordinate: GridMap's Z increases south, but our grid Z increases north
+		# grid_z=0 (southernmost) → GridMap grid Z = grid_size_z-1 (south in world)
+		# grid_z=max (northernmost) → GridMap grid Z = 0 (north in world)
+		var gridmap_z = grid_size_z - 1 - grid_z
+		
+		# Create Vector3i for grid position with inverted Z
+		var grid_pos = Vector3i(grid_x, grid_y, gridmap_z)
 		
 		# Get appropriate mesh item for this altitude
 		var mesh_item = altitude_to_mesh_item(altitude)
 		
-		# Place the tile in the GridMap at the EXACT grid position from CSV
+		# Place the tile in the GridMap at the inverted grid position
 		gridmap_node.set_cell_item(grid_pos, mesh_item)
 		tiles_placed += 1
 		
@@ -409,21 +420,26 @@ func world_position_to_grid_coords_direct(world_pos: Vector3) -> Vector3i:
 	var gridmap_pos = gridmap_node.global_position
 	var relative_pos = world_pos - gridmap_pos
 	
-	# Calculate which grid cell this position falls into
+	# Calculate which GridMap grid cell this position falls into
 	# Using floor to get the cell the position is actually in
-	var grid_x = int(floor(relative_pos.x / tile_width))
-	var grid_z = int(floor(relative_pos.z / tile_height))
+	var gridmap_x = int(floor(relative_pos.x / tile_width))
+	var gridmap_z = int(floor(relative_pos.z / tile_height))
 	
-	# Check bounds
-	if grid_x < 0 or grid_x >= grid_size_x or grid_z < 0 or grid_z >= grid_size_z:
+	# Check bounds for GridMap coordinates
+	if gridmap_x < 0 or gridmap_x >= grid_size_x or gridmap_z < 0 or gridmap_z >= grid_size_z:
 		return Vector3i(-1, -1, -1)  # Out of bounds
 	
-	# Get altitude for this grid cell
-	var grid_key = Vector2i(grid_x, grid_z)
+	# Invert grid Z: GridMap grid Z → our internal grid Z
+	# GridMap grid Z=0 (northernmost) → our grid Z = grid_size_z-1
+	# GridMap grid Z=max (southernmost) → our grid Z = 0
+	var grid_z = grid_size_z - 1 - gridmap_z
+	
+	# Get altitude for this grid cell using our internal grid coordinates
+	var grid_key = Vector2i(gridmap_x, grid_z)
 	var altitude = grid_to_altitude.get(grid_key, 0.0)
 	var grid_y = int(altitude * 0.3048)  # Convert feet to meters
 	
-	return Vector3i(grid_x, grid_y, grid_z)
+	return Vector3i(gridmap_x, grid_y, grid_z)
 
 func get_terrain_altitude_at_position(world_pos: Vector3) -> float:
 	"""
@@ -440,16 +456,21 @@ func get_terrain_altitude_at_position(world_pos: Vector3) -> float:
 	var gridmap_pos = gridmap_node.global_position
 	var relative_pos = world_pos - gridmap_pos
 	
-	# Calculate which grid cell this position is in
-	var grid_x = int(floor(relative_pos.x / tile_width))
-	var grid_z = int(floor(relative_pos.z / tile_height))
+	# Calculate which GridMap grid cell this position is in
+	var gridmap_x = int(floor(relative_pos.x / tile_width))
+	var gridmap_z = int(floor(relative_pos.z / tile_height))
 	
-	# Check if within grid bounds
-	if grid_x < 0 or grid_x >= grid_size_x or grid_z < 0 or grid_z >= grid_size_z:
+	# Check if within GridMap grid bounds
+	if gridmap_x < 0 or gridmap_x >= grid_size_x or gridmap_z < 0 or gridmap_z >= grid_size_z:
 		return -1.0  # Out of bounds
 	
-	# Direct O(1) lookup using grid coordinates
-	var grid_key = Vector2i(grid_x, grid_z)
+	# Invert grid Z: GridMap grid Z → our internal grid Z
+	# GridMap grid Z=0 (northernmost) → our grid Z = grid_size_z-1
+	# GridMap grid Z=max (southernmost) → our grid Z = 0
+	var grid_z = grid_size_z - 1 - gridmap_z
+	
+	# Direct O(1) lookup using our internal grid coordinates
+	var grid_key = Vector2i(gridmap_x, grid_z)
 	var altitude = grid_to_altitude.get(grid_key, -1.0)
 	
 	return altitude  # Returns altitude in feet, or -1 if not found

@@ -664,7 +664,8 @@ func _latlon_to_position(lat: float, lon: float, altitude: float) -> Vector3:
 	
 	# Calculate world position relative to origin point
 	var x = (lon - ORIGIN_LON) * meters_per_deg_lon  # X position in meters (East/West)
-	var z = (lat - ORIGIN_LAT) * meters_per_deg_lat  # Z position in meters (North/South)
+	# Invert Z calculation: higher latitude (north) → negative Z (north in Godot), lower latitude (south) → positive Z (south in Godot)
+	var z = (ORIGIN_LAT - lat) * meters_per_deg_lat  # Z position in meters (North/South)
 	
 	# Return Vector3 with altitude as Y coordinate
 	return Vector3(x, altitude, z)

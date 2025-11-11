@@ -334,7 +334,7 @@ func setup_balloon():
 	balloon_ref.add_child(collision)
 	
 	# Set initial position at grid origin (0, 100, 0)
-	balloon_ref.global_position = Vector3(10262.88, 300, 8095.922) * visual_scale
+	balloon_ref.global_position = Vector3(10000, 5000, 1000) * visual_scale
 
 func _input(event):
 	# Toggle mouse capture with Escape key
