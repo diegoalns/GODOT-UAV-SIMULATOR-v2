@@ -123,7 +123,7 @@ func latlon_to_world_position(latitude: float, longitude: float) -> Vector3:
 	var meters_per_deg_lon = 111320.0 * cos(deg_to_rad(ORIGIN_LAT))  # Meters per degree longitude at this latitude
 	
 	var x = (longitude - ORIGIN_LON) * meters_per_deg_lon  # X position in meters
-	var z = (ORIGIN_LAT - latitude) * meters_per_deg_lat   # Z position in meters
+	var z = (latitude - ORIGIN_LAT) * meters_per_deg_lat   # Z position in meters (FIXED: was inverted)
 	
 	return Vector3(x, 0, z)
 

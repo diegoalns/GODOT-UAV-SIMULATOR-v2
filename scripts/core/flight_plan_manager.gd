@@ -11,13 +11,13 @@ var total_plans_processed: int = 0
 
 # Configuration: CSV file path for flight plans data
 # Change this constant to load a different flight plan file
-const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs.csv"
+const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.csv"
 
 const ORIGIN_LAT = 40.55417343
 const ORIGIN_LON = -73.99583928
 
-func _ready():
-	load_flight_plans()
+# NOTE: _ready() removed - load_flight_plans() is now called explicitly by SimulationEngine
+# This prevents duplicate loading of flight plans which was causing duplicate drone creation
 
 func load_flight_plans():
 	"""
@@ -36,18 +36,25 @@ func load_flight_plans():
 	# Read all flight plans from CSV and add to queue
 	while not file.eof_reached():
 		var data = file.get_csv_line()
-		# Ensure row has minimum required columns (8 data fields needed)
-		if data.size() > 7:
+		# Ensure row has minimum required columns (13 data fields needed including node IDs)
+		# CSV structure: [0]FlightPlanID, [1]DronePortID, [2]ETD, [3]ETD_Seconds, [4]OriginLat, 
+		#                [5]OriginLon, [6]OriginNodeID, [7]DestinationLat, [8]DestinationLon, 
+		#                [9]DestinationNodeID, [10]DroneModel, [11]EstimatedFlightTime, [12]Ceiling
+		if data.size() > 10:
 			# Create Dictionary to store flight plan data from CSV columns
 			var flight_plan = {
-				"id": data[0],                    # String: Flight plan ID (e.g., "FP000001")
-				"port": data[1],                  # String: Drone port ID (e.g., "DP1", "DP2")
-				"etd_seconds": float(data[3]),    # float: Estimated Time of Departure in seconds
-				"origin_lat": float(data[4]),     # float: Origin latitude coordinate
-				"origin_lon": float(data[5]),     # float: Origin longitude coordinate
-				"dest_lat": float(data[6]),       # float: Destination latitude coordinate
-				"dest_lon": float(data[7]),       # float: Destination longitude coordinate
-				"model": data[8]                  # String: Drone model type (e.g., "Heavy Quadcopter")
+				"id": data[0],                      # String: Flight plan ID (e.g., "FP000001")
+				"port": data[1],                    # String: Drone port ID (e.g., "DP1", "DP2")
+				"etd_seconds": float(data[3]),      # float: Estimated Time of Departure in seconds
+				"origin_lat": float(data[4]),       # float: Origin latitude coordinate
+				"origin_lon": float(data[5]),       # float: Origin longitude coordinate
+				"origin_node_id": data[6],          # String: Origin graph node ID (e.g., "L0_X0_Y0")
+				"dest_lat": float(data[7]),         # float: Destination latitude coordinate (FIXED: was data[6])
+				"dest_lon": float(data[8]),         # float: Destination longitude coordinate (FIXED: was data[7])
+				"dest_node_id": data[9],            # String: Destination graph node ID (e.g., "L0_X6_Y2")
+				"model": data[10],                  # String: Drone model type (FIXED: was data[8])
+				"estimated_flight_time": float(data[11]),  # float: Estimated flight duration in minutes
+				"ceiling": float(data[12])          # float: Maximum altitude ceiling in meters
 			}
 			# Add flight plan to end of queue array
 			flight_plan_queue.append(flight_plan)
@@ -59,9 +66,17 @@ func load_flight_plans():
 	# Custom sort function compares etd_seconds field of two Dictionary objects
 	flight_plan_queue.sort_custom(func(a, b): return a.etd_seconds < b.etd_seconds)
 	
-	print("Loaded %d flight plans into queue (sorted by ETD)" % flight_plan_queue.size())
+	# Print table-formatted summary
+	print("\n" + "=".repeat(80))
+	print("│ 📋 FLIGHT PLANS LOADED")
+	print("=".repeat(80))
+	print("│ Total Plans: %d" % flight_plan_queue.size())
 	if not flight_plan_queue.is_empty():
-		print("First departure at %.2f seconds, last at %.2f seconds" % [flight_plan_queue.front().etd_seconds, flight_plan_queue.back().etd_seconds])
+		print("│ First ETD: %.2f seconds" % flight_plan_queue.front().etd_seconds)
+		print("│ Last ETD: %.2f seconds" % flight_plan_queue.back().etd_seconds)
+		var duration = flight_plan_queue.back().etd_seconds - flight_plan_queue.front().etd_seconds
+		print("│ Duration: %.2f seconds (%.2f minutes)" % [duration, duration / 60.0])
+	print("=".repeat(80) + "\n")
 
 func get_next_pending_plans(current_time: float) -> Array:
 	"""
@@ -150,5 +165,16 @@ func get_drone_ports() -> Dictionary:
 				"lon": plan.origin_lon    # float: Longitude coordinate of port
 			}
 	
-	print("Found %d unique drone ports: %s" % [ports.size(), ports.keys()])
+	# Print table-formatted droneport summary
+	print("\n" + "─".repeat(80))
+	print("│ 🏢 DRONEPORTS IDENTIFIED")
+	print("├" + "─".repeat(15) + "┬" + "─".repeat(25) + "┬" + "─".repeat(36) + "┤")
+	print("│ %-13s │ %-23s │ %-34s │" % ["Port ID", "Latitude", "Longitude"])
+	print("├" + "─".repeat(15) + "┼" + "─".repeat(25) + "┼" + "─".repeat(36) + "┤")
+	for port_id in ports.keys():
+		var lat = ports[port_id]["lat"]
+		var lon = ports[port_id]["lon"]
+		print("│ %-13s │ %23.8f │ %34.8f │" % [port_id, lat, lon])
+	print("└" + "─".repeat(15) + "┴" + "─".repeat(25) + "┴" + "─".repeat(36) + "┘\n")
+	
 	return ports

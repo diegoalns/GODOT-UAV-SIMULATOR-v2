@@ -7,12 +7,19 @@ to ensure consistency and eliminate duplication.
 All coordinates use the same reference origin point and conversion factors.
 """
 
+import math
+
 # Coordinate system reference point (NYC area)
 ORIGIN_LAT_DEGREES = 40.55417343
 ORIGIN_LON_DEGREES = -73.99583928
 
-# Conversion factor from degrees to meters
-METERS_PER_DEGREE = 111320  # Approximate meters per degree latitude
+# Conversion factors from degrees to meters
+METERS_PER_DEGREE_LAT = 111320  # Approximate meters per degree latitude
+# Adjust longitude conversion for latitude (longitude degrees get smaller toward poles)
+METERS_PER_DEGREE_LON = 111320 * math.cos(math.radians(ORIGIN_LAT_DEGREES))  # ~84,613 m/deg at 40.5°N
+
+# Legacy constant for backward compatibility (use METERS_PER_DEGREE_LAT instead)
+METERS_PER_DEGREE = METERS_PER_DEGREE_LAT
 
 # Geographic bounds for the simulation area (in degrees)
 MIN_LAT_DEGREE = 40.55417343
@@ -41,10 +48,11 @@ def get_coordinate_bounds_meters():
         dict: Dictionary with min/max values for x, y, z coordinates in meters
     """
     # Convert geographic bounds to meters relative to origin
-    min_lat_meters = (MIN_LAT_DEGREE - ORIGIN_LAT_DEGREES) * METERS_PER_DEGREE
-    max_lat_meters = (MAX_LAT_DEGREE - ORIGIN_LAT_DEGREES) * METERS_PER_DEGREE
-    min_lon_meters = (MIN_LON_DEGREE - ORIGIN_LON_DEGREES) * METERS_PER_DEGREE
-    max_lon_meters = (MAX_LON_DEGREE - ORIGIN_LON_DEGREES) * METERS_PER_DEGREE
+    # Use latitude-adjusted conversion for accurate East-West distances
+    min_lat_meters = (MIN_LAT_DEGREE - ORIGIN_LAT_DEGREES) * METERS_PER_DEGREE_LAT
+    max_lat_meters = (MAX_LAT_DEGREE - ORIGIN_LAT_DEGREES) * METERS_PER_DEGREE_LAT
+    min_lon_meters = (MIN_LON_DEGREE - ORIGIN_LON_DEGREES) * METERS_PER_DEGREE_LON
+    max_lon_meters = (MAX_LON_DEGREE - ORIGIN_LON_DEGREES) * METERS_PER_DEGREE_LON
     
     return {
         'x_min': min_lon_meters,
@@ -66,6 +74,7 @@ def degrees_to_meters(lat_degrees, lon_degrees):
     Returns:
         tuple: (x_meters, z_meters) relative to origin
     """
-    x_meters = (lon_degrees - ORIGIN_LON_DEGREES) * METERS_PER_DEGREE
-    z_meters = (lat_degrees - ORIGIN_LAT_DEGREES) * METERS_PER_DEGREE
+    # Use latitude-adjusted conversion factor for longitude (East-West distances)
+    x_meters = (lon_degrees - ORIGIN_LON_DEGREES) * METERS_PER_DEGREE_LON
+    z_meters = (lat_degrees - ORIGIN_LAT_DEGREES) * METERS_PER_DEGREE_LAT
     return x_meters, z_meters

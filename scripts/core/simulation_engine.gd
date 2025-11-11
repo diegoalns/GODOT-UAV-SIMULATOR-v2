@@ -83,16 +83,30 @@ func _physics_process(delta: float):
 	var plans_to_launch = flight_plan_manager.get_next_pending_plans(simulation_time)
 	
 	# Launch each ready drone - Array of Dictionary objects
+	# Print table header only when launching drones
+	if plans_to_launch.size() > 0:
+		print("\n" + "─".repeat(90))
+		print("│ 🚁 LAUNCHING DRONES - Simulation Time: %.2f seconds" % simulation_time)
+		print("├" + "─".repeat(12) + "┬" + "─".repeat(20) + "┬" + "─".repeat(20) + "┬" + "─".repeat(34) + "┤")
+		print("│ %-10s │ %-18s │ %-18s │ %-32s │" % ["Drone ID", "Model", "ETD (sec)", "Route (Nodes)"])
+		print("├" + "─".repeat(12) + "┼" + "─".repeat(20) + "┼" + "─".repeat(20) + "┼" + "─".repeat(34) + "┤")
+	
 	for plan in plans_to_launch:
 		# Convert latitude/longitude coordinates to Vector3 world positions
 		var origin = flight_plan_manager.latlon_to_position(plan.origin_lat, plan.origin_lon)
 		var destination = flight_plan_manager.latlon_to_position(plan.dest_lat, plan.dest_lon)
 		
-		# Debug logging to track drone creation with timing information
-		print("Creating drone %s at simulation time %.2f (ETD: %.2f)" % [plan.id, simulation_time, plan.etd_seconds])
+		# Print drone launch information in table format
+		var route_info = "%s → %s" % [plan.origin_node_id, plan.dest_node_id]
+		print("│ %-10s │ %-18s │ %-18.2f │ %-32s │" % [plan.id, plan.model, plan.etd_seconds, route_info])
 		
 		# Create and initialize the drone with route request to Python server
-		drone_manager.create_test_drone(plan.id, origin, destination, plan.model)
+		# Pass both Vector3 positions (for Godot) and Node IDs (for Python path planning)
+		drone_manager.create_test_drone(plan.id, origin, destination, plan.model, plan.origin_node_id, plan.dest_node_id)
+	
+	# Close the table if drones were launched
+	if plans_to_launch.size() > 0:
+		print("└" + "─".repeat(12) + "┴" + "─".repeat(20) + "┴" + "─".repeat(20) + "┴" + "─".repeat(34) + "┘")
 	
 	# Update all created drones
 	drone_manager.update_all(time_step * speed_multiplier)

@@ -1,6 +1,11 @@
 class_name Drone
 extends Area3D
 
+# Geographic coordinate conversion constants - must match FlightPlanManager and GridMapManager
+# These define the reference point for converting lat/lon to world coordinates (meters)
+const ORIGIN_LAT = 40.55417343  # Reference latitude in decimal degrees (float)
+const ORIGIN_LON = -73.99583928  # Reference longitude in decimal degrees (float)
+
 # Core identification and position
 var drone_id: String
 var current_position: Vector3
@@ -29,6 +34,11 @@ var returning: bool = false         # Whether drone is on return journey
 var origin_position: Vector3        # Starting position for return journey
 var destination_position: Vector3   # Final destination position
 
+# Graph node IDs for Python path planning - String type with format like "L0_X0_Y0"
+# These provide direct O(1) lookup in the graph instead of expensive O(n) coordinate matching
+var origin_node_id: String = ""     # Origin graph node ID (e.g., "L0_X0_Y0")
+var dest_node_id: String = ""       # Destination graph node ID (e.g., "L0_X6_Y2")
+
 # Movement state (holonomic - no physics constraints)
 var target_position: Vector3        # Current target position
 var target_speed: float = 0.0       # Target speed for current segment
@@ -44,15 +54,17 @@ var collision_partners: Array = []  # Array of drone IDs currently in collision 
 var collision_shape: CollisionShape3D = null  # Reference to collision shape for Area3D
 
 
-func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
+func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, start_node_id: String = "", end_node_id: String = ""):
 	"""
 	Initialize drone with position, destination and model-specific attributes
 	
 	Args:
-		id: Unique identifier for the drone
-		start: Starting position in 3D space
-		end: Destination position in 3D space
-		drone_model: Type of drone (Long Range FWVTOL, Light Quadcopter, Heavy Quadcopter)
+		id: String - Unique identifier for the drone (e.g., "FP000001")
+		start: Vector3 - Starting position in 3D space (Godot world coordinates)
+		end: Vector3 - Destination position in 3D space (Godot world coordinates)
+		drone_model: String - Type of drone (Long Range FWVTOL, Light Quadcopter, Heavy Quadcopter)
+		start_node_id: String - Origin graph node ID for path planning (e.g., "L0_X0_Y0")
+		end_node_id: String - Destination graph node ID for path planning (e.g., "L0_X6_Y2")
 	"""
 	drone_id = id
 	current_position = start
@@ -62,6 +74,10 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 	global_position = current_position
 	destination_position = end
 	model = drone_model
+	
+	# Store graph node IDs for efficient Python path planning
+	origin_node_id = start_node_id
+	dest_node_id = end_node_id
 	
 	# Set model-specific attributes
 	_set_model_attributes()
@@ -85,10 +101,15 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 	add_child(route_response_timer)
 	
 	# Create a dictionary with the data to include in the message
+	# Using Node IDs for efficient O(1) graph lookup instead of O(n) coordinate matching
 	var message_data = {
 		"type": "request_route",
 		"drone_id": drone_id,
 		"model": model,
+		# PRIMARY: Graph node IDs for fast path planning (String type - direct hash lookup)
+		"start_node_id": origin_node_id,     # e.g., "L0_X0_Y0" - Origin graph node
+		"end_node_id": dest_node_id,         # e.g., "L0_X6_Y2" - Destination graph node
+		# FALLBACK: Coordinate positions if node IDs are not available (float type)
 		"start_position": {
 			"lon": start.x,  # Godot X (East/West) → Python longitude
 			"lat": start.z,  # Godot Z (North/South) → Python latitude  
@@ -99,9 +120,10 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 			"lat": end.z,    # Godot Z (North/South) → Python latitude
 			"alt": end.y     # Godot Y (Up/Down) → Python altitude
 		},
-		"battery_percentage": get_battery_percentage(),
-		"max_speed": max_speed,
-		"max_range": max_range
+		# Drone performance parameters for route optimization
+		"battery_percentage": get_battery_percentage(),  # float: Current battery level (0-100)
+		"max_speed": max_speed,                          # float: Maximum velocity in m/s
+		"max_range": max_range                           # float: Maximum flight range in meters
 	}
 
 	# Convert the dictionary to a JSON string
@@ -119,7 +141,7 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String):
 	route_response_timer.start()
 	
 	# Wait for response instead of creating default route immediately
-	print("Drone %s waiting for route response from server..." % drone_id)
+	# Debug output removed - server request is silent for cleaner logs
 	
 	# Set initial target
 	if route.size() > 0:
@@ -180,7 +202,7 @@ func _set_model_attributes():
 			
 		_:
 			# Default to Long Range FWVTOL if unknown model
-			print("Warning: Unknown drone model '%s', using Long Range FWVTOL defaults" % model)
+			push_warning("Unknown drone model '%s', using Long Range FWVTOL defaults" % model)
 			model = "Long Range FWVTOL"
 			_set_model_attributes()
 
@@ -589,14 +611,13 @@ func _on_route_response_received(data):
 		data: PackedByteArray containing the server response
 	"""
 	var response_text = data.get_string_from_utf8()
-	#print("Drone %s received response: %s" % [drone_id, response_text])
 	
 	# Parse JSON response
 	var json = JSON.new()
 	var parse_result = json.parse(response_text)
 	
 	if parse_result != OK:
-		print("Failed to parse JSON response for drone %s" % drone_id)
+		push_warning("Failed to parse JSON response for drone %s" % drone_id)
 		# Fall back to default route
 		_create_default_route(origin_position, destination_position)
 		_finalize_route_setup()
@@ -618,36 +639,72 @@ func _on_route_response_received(data):
 			# Use server-provided route
 			_process_server_route(response_data.route)
 		else:
-			print("No valid route in response, using default route for drone %s" % drone_id)
+			push_warning("No valid route in response, using default route for drone %s" % drone_id)
 			# Fall back to default route
 			_create_default_route(origin_position, destination_position)
 		
 		_finalize_route_setup()
 
+func _latlon_to_position(lat: float, lon: float, altitude: float) -> Vector3:
+	"""
+	Convert latitude/longitude/altitude to world position in meters
+	Uses the same conversion method as FlightPlanManager and GridMapManager for consistency
+	
+	Args:
+		lat: float - Latitude in decimal degrees
+		lon: float - Longitude in decimal degrees
+		altitude: float - Altitude in meters
+	
+	Returns:
+		Vector3 - World position with X (longitude), Y (altitude), Z (latitude) in meters
+	"""
+	# Conversion constants: approximate meters per degree at this latitude
+	var meters_per_deg_lat = 111320.0  # Meters per degree latitude (approximately constant globally)
+	var meters_per_deg_lon = 111320.0 * cos(deg_to_rad(ORIGIN_LAT))  # Meters per degree longitude (varies by latitude)
+	
+	# Calculate world position relative to origin point
+	var x = (lon - ORIGIN_LON) * meters_per_deg_lon  # X position in meters (East/West)
+	var z = (lat - ORIGIN_LAT) * meters_per_deg_lat  # Z position in meters (North/South)
+	
+	# Return Vector3 with altitude as Y coordinate
+	return Vector3(x, altitude, z)
+
 func _process_server_route(server_route: Array):
 	"""
 	Process route data received from server
+	Server now sends geographic coordinates (lat/lon/altitude) which we convert to world position
 	
 	Args:
-		server_route: Array of waypoint data from server
+		server_route: Array of waypoint dictionaries from server, each containing:
+					  - lat: float (latitude in decimal degrees)
+					  - lon: float (longitude in decimal degrees)
+					  - altitude: float (altitude in meters)
+					  - speed: float (waypoint speed in m/s)
+					  - description: string (waypoint label)
 	"""
-	route.clear()
+	route.clear()  # Clear existing route array before populating with new waypoints
 	
+	# Process each waypoint from the server response
 	for waypoint_data in server_route:
 		if waypoint_data is Dictionary:
+			# Extract geographic coordinates from server response
+			var lat = waypoint_data.get("lat", 0.0)        # Latitude in decimal degrees (float)
+			var lon = waypoint_data.get("lon", 0.0)        # Longitude in decimal degrees (float)
+			var altitude = waypoint_data.get("altitude", 10.0)  # Altitude in meters (float)
+			
+			# Convert geographic coordinates to world position using the same method as other managers
+			var world_pos = _latlon_to_position(lat, lon, altitude)  # Returns Vector3 in meters
+			
+			# Create waypoint dictionary with converted world position
 			var waypoint = {
-				"position": Vector3(
-					waypoint_data.get("x", 0.0),
-					waypoint_data.get("y", 10.0),  # Default altitude
-					waypoint_data.get("z", 0.0)
-				),
-				"altitude": waypoint_data.get("altitude", 10.0),
-				"speed": waypoint_data.get("speed", max_speed * 0.8),
-				"description": waypoint_data.get("description", "Server waypoint")
+				"position": world_pos,  # Vector3 - world position in meters (X, Y, Z)
+				"altitude": altitude,   # float - altitude in meters (duplicate of world_pos.y)
+				"speed": waypoint_data.get("speed", max_speed * 0.8),  # float - waypoint speed in m/s
+				"description": waypoint_data.get("description", "Server waypoint")  # string - waypoint label
 			}
-			route.append(waypoint)
+			route.append(waypoint)  # Add waypoint to route array
 	
-	print("Drone %s loaded %d waypoints from server" % [drone_id, route.size()])
+	# Debug output removed for cleaner logs
 
 func _finalize_route_setup():
 	"""
@@ -658,16 +715,16 @@ func _finalize_route_setup():
 	# Set initial target if we have waypoints
 	if route.size() > 0:
 		_set_current_target()
-		print("Drone %s route finalized, starting mission" % drone_id)
+		# Route finalized successfully - silent operation
 	else:
-		print("Warning: Drone %s has no valid route!" % drone_id)
+		push_warning("Drone %s has no valid route!" % drone_id)
 		completed = true
 
 func _on_route_response_timeout():
 	"""
 	Handle timeout when no response is received from server
 	"""
-	print("Timeout waiting for route response for drone %s, using default route" % drone_id)
+	push_warning("Timeout waiting for route response for drone %s, using default route" % drone_id)
 	
 	# Disconnect from signal to avoid processing late responses
 	if WebSocketManager.data_received.is_connected(_on_route_response_received):

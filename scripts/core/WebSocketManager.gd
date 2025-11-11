@@ -14,7 +14,13 @@ var reconnect_timer = null
 var is_connected = false
 
 func _ready():
-	print("WebSocketManager is trying to connect to the server...")
+	print("\n" + "=".repeat(80))
+	print("│ 🌐 WEBSOCKET CLIENT MANAGER")
+	print("=".repeat(80))
+	print("│ Initializing connection to Python server...")
+	print("│ Target: %s" % default_url)
+	print("=".repeat(80) + "\n")
+	
 	# Create reconnect timer
 	reconnect_timer = Timer.new()
 	reconnect_timer.one_shot = true
@@ -25,10 +31,9 @@ func _ready():
 
 # Initiates a connection to the WebSocket server at the given URL
 func connect_to_server(url):
-	print("Connecting to server at ", url)
 	var err = ws_peer.connect_to_url(url)
 	if err != OK:
-		print("Failed to initiate connection: ", err)
+		print("│ ❌ Connection failed (Error: %d)" % err)
 		schedule_reconnect()
 		
 # Called every frame; used to poll the WebSocket for new events and data
@@ -41,13 +46,18 @@ func _process(_delta):
 	
 	if state == WebSocketPeer.STATE_OPEN:
 		if not is_connected:
-			print("Successfully connected to WebSocket server!")
+			print("├" + "─".repeat(78) + "┤")
+			print("│ ✅ CONNECTION ESTABLISHED")
+			print("│ Status: Connected to %s" % default_url)
+			print("└" + "─".repeat(78) + "┘\n")
 			is_connected = true
-			ws_peer.send_text("Hello from Godot WebSocketManager!")
 			emit_signal("connected")
 	elif state == WebSocketPeer.STATE_CLOSED:
 		if is_connected:
-			print("Connection to WebSocket server lost")
+			print("\n" + "├" + "─".repeat(78) + "┤")
+			print("│ ⚠ CONNECTION LOST")
+			print("│ Attempting to reconnect...")
+			print("└" + "─".repeat(78) + "┘\n")
 			is_connected = false
 			emit_signal("disconnected")
 			schedule_reconnect()
@@ -59,11 +69,11 @@ func _process(_delta):
 		#print("Received data: ", packet.get_string_from_utf8())
 
 func schedule_reconnect():
-	print("Scheduling reconnection attempt in ", reconnect_timer.wait_time, " seconds")
+	# Silently schedule reconnect - no output needed
 	reconnect_timer.start()
 
 func _on_reconnect_timer_timeout():
-	print("Attempting to reconnect...")
+	# Silently attempt reconnect - no output needed
 	connect_to_server(default_url)
 
 func send_message(message):
@@ -71,5 +81,5 @@ func send_message(message):
 		ws_peer.send_text(message)
 		return true
 	else:
-		print("Cannot send message - not connected to server")
+		push_warning("Cannot send message - WebSocket not connected to server")
 		return false

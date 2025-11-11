@@ -7,10 +7,24 @@ var visualization_system: VisualizationSystem
 func set_visualization_system(vis_system: VisualizationSystem):
 	visualization_system = vis_system
 
-func create_test_drone(id: String, start: Vector3, end: Vector3, model: String) -> Drone:
+func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, origin_node_id: String = "", dest_node_id: String = "") -> Drone:
+	"""
+	Create a test drone instance and initialize it with flight parameters
+	
+	Args:
+		id: String - Unique drone identifier (e.g., "FP000001")
+		start: Vector3 - Starting world position in Godot coordinates
+		end: Vector3 - Destination world position in Godot coordinates
+		model: String - Drone model type (e.g., "Heavy Quadcopter")
+		origin_node_id: String - Origin graph node ID for Python path planning (e.g., "L0_X0_Y0")
+		dest_node_id: String - Destination graph node ID for Python path planning (e.g., "L0_X6_Y2")
+	
+	Returns:
+		Drone - The created and initialized drone instance
+	"""
 	# Check if drone with this ID already exists - prevents multiple instances with same ID
 	if drones.has(id):
-		print("Warning: Attempting to create duplicate drone with ID %s. Cleaning up existing drone first." % id)
+		push_warning("Attempting to create duplicate drone with ID %s. Cleaning up existing drone first." % id)
 		
 		# Properly remove the existing drone to prevent multiple instances
 		var existing_drone = drones[id]
@@ -27,7 +41,8 @@ func create_test_drone(id: String, start: Vector3, end: Vector3, model: String) 
 	add_child(drone)  # Add drone node to scene tree - required before calling any Timer.start() methods
 	
 	# Initialize drone after adding to scene tree to ensure all child nodes (like timers) are properly connected
-	drone.initialize(id, start, end, model)
+	# Pass both Vector3 positions (for Godot navigation) and Node IDs (for efficient Python path planning)
+	drone.initialize(id, start, end, model, origin_node_id, dest_node_id)
 	
 	# Note: Collision detection now handled automatically by Area3D signals
 	# No need to set collision manager reference anymore

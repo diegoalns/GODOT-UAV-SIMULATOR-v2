@@ -32,20 +32,51 @@ async def websocket_handler(websocket):
                     max_speed = data.get("max_speed")
                     max_range = data.get("max_range")
                     
-                    print(f"Route request for drone: {drone_id} ({model})")
-                    print(f"  Start: (lon:{start_pos['lon']}, lat:{start_pos['lat']}, alt:{start_pos['alt']})")
-                    print(f"  End: (lon:{end_pos['lon']}, lat:{end_pos['lat']}, alt:{end_pos['alt']})")
-                    print(f"  Battery: {battery_percentage}%, Max Speed: {max_speed} m/s, Range: {max_range} m")
-                    print(f"  Planning route...")
-
-                    # Debug position mapping
-                    print(f"  Mapping start position...")
-                    start_node = GraphBuilder.debug_position_mapping(airspace_graph, start_pos)
-                    print(f"  Mapping end position...")
-                    end_node = GraphBuilder.debug_position_mapping(airspace_graph, end_pos)
+                    # NEW: Get node IDs if provided (efficient O(1) lookup)
+                    start_node_id = data.get("start_node_id")
+                    end_node_id = data.get("end_node_id")
                     
+                    print(f"Route request for drone: {drone_id} ({model})")
+                    print(f"  Battery: {battery_percentage}%, Max Speed: {max_speed} m/s, Range: {max_range} m")
+                    
+                    # Determine start and end nodes - prioritize Node IDs for speed
+                    start_node = None
+                    end_node = None
+                    
+                    # METHOD 1: Use Node IDs if provided (FAST - O(1) hash lookup)
+                    if start_node_id and end_node_id:
+                        print(f"  Using Node IDs: {start_node_id} -> {end_node_id}")
+                        
+                        # Direct graph lookup - instant O(1) operation
+                        if airspace_graph.has_node(start_node_id):
+                            start_node = start_node_id
+                            print(f"  ✓ Start node found: {start_node_id}")
+                        else:
+                            print(f"  ✗ Start node not in graph: {start_node_id}")
+                        
+                        if airspace_graph.has_node(end_node_id):
+                            end_node = end_node_id
+                            print(f"  ✓ End node found: {end_node_id}")
+                        else:
+                            print(f"  ✗ End node not in graph: {end_node_id}")
+                    
+                    # METHOD 2: Fallback to coordinate mapping if Node IDs not available (SLOW - O(n) search)
                     if start_node is None or end_node is None:
-                        print(f"  Could not find valid nodes for start or end position")
+                        print(f"  Node IDs not available, falling back to coordinate mapping...")
+                        print(f"  Start: (lon:{start_pos['lon']}, lat:{start_pos['lat']}, alt:{start_pos['alt']})")
+                        print(f"  End: (lon:{end_pos['lon']}, lat:{end_pos['lat']}, alt:{end_pos['alt']})")
+                        
+                        if start_node is None:
+                            print(f"  Mapping start position...")
+                            start_node = GraphBuilder.debug_position_mapping(airspace_graph, start_pos)
+                        
+                        if end_node is None:
+                            print(f"  Mapping end position...")
+                            end_node = GraphBuilder.debug_position_mapping(airspace_graph, end_pos)
+                    
+                    # Check if we successfully found both nodes
+                    if start_node is None or end_node is None:
+                        print(f"  ERROR: Could not find valid nodes for start or end position")
                         response = {
                             "type": "route_response",
                             "drone_id": drone_id,
@@ -54,6 +85,8 @@ async def websocket_handler(websocket):
                         }
                         await websocket.send(json.dumps(response))
                         continue
+                    
+                    print(f"  Planning route from {start_node} to {end_node}...")
 
                     try:
                         # Calculate shortest path between nodes
