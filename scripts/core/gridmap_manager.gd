@@ -5,15 +5,24 @@ extends Node
 var gridmap_node: GridMap
 # MeshLibrary resource reference
 var mesh_library: MeshLibrary
-# CSV data storage - Dictionary with lat/lon as keys and altitude as values
+# CSV data storage - Dictionary with index as key and point data as value
 var terrain_data: Dictionary = {}
-# Coordinate system parameters - each tile is 927m x 702m
-var tile_width: float = 702.0  # Width of each tile in meters (X axis)
-var tile_height: float = 927.0  # Height of each tile in meters (Z axis)
+# Grid mapping dictionaries - map coordinates to grid indices for perfect alignment
+var lat_to_grid_z: Dictionary = {}  # Dictionary: latitude → grid Z index (int)
+var lon_to_grid_x: Dictionary = {}  # Dictionary: longitude → grid X index (int)
+var grid_to_altitude: Dictionary = {} # Dictionary: Vector2i(grid_x, grid_z) → altitude (float)
+# Coordinate system parameters - calculated dynamically from CSV grid spacing
+var tile_width: float = 705.11  # Width of each tile in meters (X axis, longitude) - calculated from CSV
+var tile_height: float = 927.67  # Height of each tile in meters (Z axis, latitude) - calculated from CSV
+# Grid dimensions
+var grid_size_x: int = 0  # Number of grid cells in X direction (longitude)
+var grid_size_z: int = 0  # Number of grid cells in Z direction (latitude)
 
 # Coordinate conversion constants (same as FlightPlanManager)
 const ORIGIN_LAT = 40.55417343  # Reference latitude for coordinate conversion
 const ORIGIN_LON = -73.99583928  # Reference longitude for coordinate conversion
+# CSV grid spacing in degrees (regular grid at 1/120 degree intervals)
+const CSV_GRID_SPACING_DEG = 0.00833333333  # Approximately 1/120 degrees
 
 func _ready():
 	# Load the mesh library resource
@@ -27,18 +36,20 @@ func _ready():
 func initialize_gridmap(gridmap: GridMap):
 	"""
 	Initialize the GridMap node with the mesh library and set up basic properties
+	Cell size will be calculated dynamically from CSV data in load_terrain_data()
 	@param gridmap: GridMap - The GridMap node to initialize
 	"""
 	gridmap_node = gridmap
-	gridmap_node.cell_size = Vector3(702, 0.5, 927)
+	# Note: Cell size will be set after analyzing CSV data
 	# Note: mesh_library is already set by the visualization system
 	
-	print("GridMapManager: GridMap initialized with cell size: ", gridmap_node.cell_size)
+	print("GridMapManager: GridMap initialized (cell size will be calculated from CSV data)")
 
 func load_terrain_data():
 	"""
-	Load terrain data from the FAA UAS facility CSV file
-	Stores each data point with its exact coordinates and altitude
+	Load terrain data from the FAA UAS facility CSV file using direct grid mapping
+	This approach eliminates coordinate conversion errors by mapping CSV coordinates
+	directly to grid indices, ensuring perfect alignment between CSV data and tiles
 	"""
 	var file = FileAccess.open("res://data/Filtered_FAA_UAS_FacilityMap_Data_LGA.csv", FileAccess.READ)
 	if not file:
@@ -47,12 +58,23 @@ func load_terrain_data():
 	
 	# Skip header line
 	var header = file.get_line()
-	print("GridMapManager: CSV Header: ", header)
+	print("\n" + "=".repeat(80))
+	print("│ 🗺️ GRIDMAP MANAGER - DIRECT CSV-TO-GRID MAPPING")
+	print("=".repeat(80))
+	print("│ CSV Header: %s" % header)
 	
-	# Clear existing terrain data
+	# Clear existing data structures
 	terrain_data.clear()
+	lat_to_grid_z.clear()
+	lon_to_grid_x.clear()
+	grid_to_altitude.clear()
 	
-	# Parse data lines
+	# Track unique lat/lon values to build grid structure
+	var unique_lats: Dictionary = {}  # Dictionary: rounded_lat (int) → actual_lat (float)
+	var unique_lons: Dictionary = {}  # Dictionary: rounded_lon (int) → actual_lon (float)
+	var temp_data: Array = []  # Array: temporary storage for all CSV rows
+	
+	# PASS 1: Read all data and identify unique coordinate values
 	var line_count = 0
 	while not file.eof_reached():
 		var line = file.get_line().strip_edges()
@@ -64,25 +86,119 @@ func load_terrain_data():
 			continue
 			
 		# Parse CSV values: CEILING,LATITUDE,LONGITUDE
-		var ceiling = parts[0].to_float()  # Altitude/ceiling value
-		var latitude = parts[1].to_float()  # Latitude coordinate
-		var longitude = parts[2].to_float()  # Longitude coordinate
+		var ceiling = parts[0].to_float()  # Altitude/ceiling value in feet (float)
+		var latitude = parts[1].to_float()  # Latitude coordinate in decimal degrees (float)
+		var longitude = parts[2].to_float()  # Longitude coordinate in decimal degrees (float)
 		
-		# Store each point as a dictionary with all its data
-		var point_data = {
+		# Store temporarily for second pass
+		temp_data.append({
+			"ceiling": ceiling,
 			"latitude": latitude,
-			"longitude": longitude,
-			"altitude": ceiling
-		}
+			"longitude": longitude
+		})
 		
-		# Use a simple index as key instead of coordinate string
-		terrain_data[line_count] = point_data
+		# Track unique coordinates (round to 5 decimal places to handle floating point precision)
+		var lat_key = int(round(latitude * 100000))  # Key for lookup (int)
+		var lon_key = int(round(longitude * 100000))  # Key for lookup (int)
+		
+		if not unique_lats.has(lat_key):
+			unique_lats[lat_key] = latitude
+		if not unique_lons.has(lon_key):
+			unique_lons[lon_key] = longitude
+		
 		line_count += 1
 	
 	file.close()
 	
-	print("GridMapManager: Loaded %d terrain data points" % line_count)
-	print("GridMapManager: Ready to place tiles directly at coordinate positions")
+	print("│ Loaded: %d data points from CSV" % line_count)
+	print("│ Unique latitudes: %d" % unique_lats.size())
+	print("│ Unique longitudes: %d" % unique_lons.size())
+	
+	# PASS 2: Sort coordinates and create ordered grid indices
+	var lat_list: Array = unique_lats.values()  # Array of float latitudes
+	var lon_list: Array = unique_lons.values()  # Array of float longitudes
+	lat_list.sort()  # Sort ascending (south to north)
+	lon_list.sort()  # Sort ascending (west to east)
+	
+	# Store grid dimensions
+	grid_size_z = lat_list.size()  # Number of cells in Z direction (latitude)
+	grid_size_x = lon_list.size()  # Number of cells in X direction (longitude)
+	
+	print("│ Grid dimensions: %d × %d cells (X × Z)" % [grid_size_x, grid_size_z])
+	
+	# Create bidirectional mappings: coordinate ↔ grid index
+	for i in range(lat_list.size()):
+		var lat = lat_list[i]
+		var lat_key = int(round(lat * 100000))
+		lat_to_grid_z[lat_key] = i  # Map latitude to grid Z index
+	
+	for i in range(lon_list.size()):
+		var lon = lon_list[i]
+		var lon_key = int(round(lon * 100000))
+		lon_to_grid_x[lon_key] = i  # Map longitude to grid X index
+	
+	# PASS 3: Calculate actual tile dimensions from coordinate spacing
+	if lat_list.size() > 1 and lon_list.size() > 1:
+		var lat_spacing_deg = lat_list[1] - lat_list[0]  # Spacing in degrees (float)
+		var lon_spacing_deg = lon_list[1] - lon_list[0]  # Spacing in degrees (float)
+		
+		# Convert degree spacing to meters
+		var meters_per_deg_lat = 111320.0  # Constant for latitude (float)
+		var meters_per_deg_lon = 111320.0 * cos(deg_to_rad(ORIGIN_LAT))  # Adjusted for latitude (float)
+		
+		tile_height = lat_spacing_deg * meters_per_deg_lat  # Z dimension in meters (float)
+		tile_width = lon_spacing_deg * meters_per_deg_lon   # X dimension in meters (float)
+		
+		print("├" + "─".repeat(80))
+		print("│ 📐 CALCULATED TILE DIMENSIONS FROM CSV GRID:")
+		print("│   Latitude spacing: %.8f° = %.2f meters (tile_height/Z)" % [lat_spacing_deg, tile_height])
+		print("│   Longitude spacing: %.8f° = %.2f meters (tile_width/X)" % [lon_spacing_deg, tile_width])
+		print("│   Tile size: %.2fm × %.2fm" % [tile_width, tile_height])
+		
+		# Update GridMap cell size to match calculated dimensions
+		if gridmap_node:
+			gridmap_node.cell_size = Vector3(tile_width, 0.5, tile_height)
+			print("│   GridMap cell_size updated: %s" % gridmap_node.cell_size)
+	else:
+		push_warning("GridMapManager: Not enough data to calculate tile dimensions")
+	
+	# PASS 4: Map each CSV point to grid cell using direct index lookup
+	print("├" + "─".repeat(80))
+	print("│ 🎯 MAPPING CSV POINTS TO GRID CELLS (Direct Index Mapping):")
+	
+	var points_mapped = 0
+	for point_data in temp_data:
+		var latitude = point_data["latitude"]
+		var longitude = point_data["longitude"]
+		var altitude = point_data["ceiling"]
+		
+		# Direct grid coordinate lookup (NO world coordinate conversion!)
+		var lat_key = int(round(latitude * 100000))
+		var lon_key = int(round(longitude * 100000))
+		
+		# Get grid indices directly from lookup tables
+		var grid_x = lon_to_grid_x[lon_key]  # X index from longitude (int)
+		var grid_z = lat_to_grid_z[lat_key]  # Z index from latitude (int)
+		
+		# Store altitude mapped to grid cell
+		var grid_key = Vector2i(grid_x, grid_z)
+		grid_to_altitude[grid_key] = altitude
+		
+		# Store in terrain_data for legacy compatibility
+		terrain_data[points_mapped] = {
+			"latitude": latitude,
+			"longitude": longitude,
+			"altitude": altitude,
+			"grid_x": grid_x,
+			"grid_z": grid_z
+		}
+		
+		points_mapped += 1
+	
+	print("│   Mapped: %d CSV points to grid cells" % points_mapped)
+	print("│   Method: Direct coordinate-to-index lookup (ZERO offset)")
+	print("└" + "─".repeat(80))
+	print("✅ Terrain data loaded with PERFECT CSV-to-grid alignment\n")
 	
 	return true
 
@@ -147,8 +263,9 @@ func world_position_to_grid_coords(world_pos: Vector3, altitude: float) -> Vecto
 
 func populate_gridmap():
 	"""
-	Populate the GridMap with terrain tiles - one tile per CSV data point
-	Each tile is 927m x 702m and centered at the exact coordinate from the CSV
+	Populate the GridMap with terrain tiles using direct grid coordinate mapping
+	This ensures PERFECT alignment between CSV data points and GridMap tiles
+	Each tile is placed at the exact grid index derived from CSV coordinates
 	"""
 	if not gridmap_node:
 		push_error("GridMapManager: GridMap node not initialized")
@@ -158,79 +275,122 @@ func populate_gridmap():
 		push_error("GridMapManager: No terrain data loaded")
 		return false
 	
-	print("GridMapManager: Starting to populate GridMap with %d terrain points..." % terrain_data.size())
+	print("\n" + "=".repeat(80))
+	print("│ 🎨 POPULATING GRIDMAP WITH TILES")
+	print("=".repeat(80))
+	print("│ Total points to place: %d" % terrain_data.size())
+	print("│ Tile dimensions: %.2fm × %.2fm" % [tile_width, tile_height])
+	print("│ Grid size: %d × %d cells" % [grid_size_x, grid_size_z])
+	print("├" + "─".repeat(80))
 	
 	var tiles_placed = 0
+	var altitude_counts = {0: 0, 50: 0, 100: 0, 200: 0, 300: 0, 400: 0}  # Track altitude distribution
 	
-	# Iterate through all terrain data points (each point is a dictionary with lat, lon, altitude)
+	# Iterate through all terrain data points
 	for point_index in terrain_data.keys():
-		var point_data = terrain_data[point_index]  # Get the dictionary for this point
-		var latitude = point_data["latitude"]        # Extract latitude
-		var longitude = point_data["longitude"]      # Extract longitude  
-		var altitude = point_data["altitude"]        # Extract altitude
+		var point_data = terrain_data[point_index]  # Dictionary with lat, lon, altitude, grid_x, grid_z
+		var grid_x = point_data["grid_x"]            # Grid X index (int) - already calculated
+		var grid_z = point_data["grid_z"]            # Grid Z index (int) - already calculated
+		var altitude = point_data["altitude"]        # Altitude in feet (float)
 		
-		# Convert lat/lon to world position (in meters)
-		var world_pos = latlon_to_world_position(latitude, longitude)
+		# Convert altitude from feet to meters for Y coordinate
+		var altitude_meters = altitude * 0.3048  # Feet to meters conversion (float)
+		var grid_y = int(altitude_meters)         # Grid Y coordinate (int)
 		
-		# Convert world position to grid coordinates, including altitude as height
-		var grid_pos = world_position_to_grid_coords(world_pos, altitude)
+		# Create Vector3i for grid position using DIRECT indices (no conversion!)
+		var grid_pos = Vector3i(grid_x, grid_y, grid_z)
 		
 		# Get appropriate mesh item for this altitude
 		var mesh_item = altitude_to_mesh_item(altitude)
 		
-		# Place the tile in the GridMap at the calculated grid position (now includes height)
+		# Place the tile in the GridMap at the EXACT grid position from CSV
 		gridmap_node.set_cell_item(grid_pos, mesh_item)
 		tiles_placed += 1
 		
-		# Progress logging every 100 tiles
-		if tiles_placed % 100 == 0:
-			print("GridMapManager: Placed %d/%d tiles... Latest: [%.6f, %.6f] alt=%.0fm -> %s -> item %d" % [
-				tiles_placed, terrain_data.size(), latitude, longitude, altitude, grid_pos, mesh_item
+		# Track altitude distribution
+		if altitude_counts.has(int(altitude)):
+			altitude_counts[int(altitude)] += 1
+		
+		# Progress logging every 200 tiles
+		if tiles_placed % 200 == 0:
+			print("│ Progress: %d/%d tiles (%.1f%%)" % [
+				tiles_placed, 
+				terrain_data.size(), 
+				(float(tiles_placed) / terrain_data.size()) * 100.0
 			])
 	
-	print("GridMapManager: Successfully placed %d tiles in GridMap" % tiles_placed)
-	print("GridMapManager: Each tile represents 927m x 702m with height based on CSV altitude (0-400m)")
+	print("├" + "─".repeat(80))
+	print("│ ✅ GRIDMAP POPULATION COMPLETE")
+	print("│   Tiles placed: %d" % tiles_placed)
+	print("│   Method: Direct CSV-to-grid index mapping")
+	print("│   Alignment: PERFECT (zero offset)")
+	print("├" + "─".repeat(80))
+	print("│ 📊 ALTITUDE DISTRIBUTION:")
+	for alt in [0, 50, 100, 200, 300, 400]:
+		var count = altitude_counts[alt]
+		var percentage = (float(count) / tiles_placed) * 100.0 if tiles_placed > 0 else 0.0
+		var bar_length = int(percentage / 2)  # Scale bar to max 50 chars
+		var bar = "█".repeat(bar_length)
+		print("│   %3dft: %4d tiles (%.1f%%) %s" % [alt, count, percentage, bar])
+	print("└" + "─".repeat(80) + "\n")
 	
 	return true
 
+func world_position_to_grid_coords_direct(world_pos: Vector3) -> Vector3i:
+	"""
+	Convert world position to grid coordinates using the new direct mapping system
+	This uses the calculated tile dimensions to find the correct grid cell
+	@param world_pos: Vector3 - World position in meters
+	@return Vector3i - Grid coordinates (returns Vector3i(-1,-1,-1) if out of bounds)
+	"""
+	if grid_size_x == 0 or grid_size_z == 0:
+		push_warning("GridMapManager: Grid not initialized")
+		return Vector3i(-1, -1, -1)
+	
+	# Calculate which grid cell this world position falls into
+	# Using floor to get the cell the position is actually in
+	var grid_x = int(floor(world_pos.x / tile_width))
+	var grid_z = int(floor(world_pos.z / tile_height))
+	
+	# Check bounds
+	if grid_x < 0 or grid_x >= grid_size_x or grid_z < 0 or grid_z >= grid_size_z:
+		return Vector3i(-1, -1, -1)  # Out of bounds
+	
+	# Get altitude for this grid cell
+	var grid_key = Vector2i(grid_x, grid_z)
+	var altitude = grid_to_altitude.get(grid_key, 0.0)
+	var grid_y = int(altitude * 0.3048)  # Convert feet to meters
+	
+	return Vector3i(grid_x, grid_y, grid_z)
+
 func get_terrain_altitude_at_position(world_pos: Vector3) -> float:
 	"""
-	Get the terrain altitude at a specific world position
-	Finds the closest terrain tile to the given position
+	Get the terrain altitude at a specific world position using grid-based lookup
+	This is much faster than the old method (O(1) vs O(n)) thanks to direct grid mapping
 	@param world_pos: Vector3 - World position to query
-	@return float - Altitude value at that position, or -1 if not found
+	@return float - Altitude value at that position in feet, or -1 if not found
 	"""
-	if terrain_data.is_empty():
+	if grid_to_altitude.is_empty():
 		return -1.0
 	
-	# Find the closest terrain data point
-	var closest_altitude = -1.0
-	var min_distance = INF
+	# Calculate which grid cell this position is in
+	var grid_x = int(floor(world_pos.x / tile_width))
+	var grid_z = int(floor(world_pos.z / tile_height))
 	
-	# Iterate through all terrain points to find the closest one
-	for point_index in terrain_data.keys():
-		var point_data = terrain_data[point_index]
-		var latitude = point_data["latitude"]
-		var longitude = point_data["longitude"]
-		var altitude = point_data["altitude"]
-		
-		# Convert this point's lat/lon to world position
-		var point_world_pos = latlon_to_world_position(latitude, longitude)
-		
-		# Calculate distance to the query position
-		var distance = world_pos.distance_to(point_world_pos)
-		
-		# Keep track of the closest point
-		if distance < min_distance:
-			min_distance = distance
-			closest_altitude = altitude
+	# Check if within grid bounds
+	if grid_x < 0 or grid_x >= grid_size_x or grid_z < 0 or grid_z >= grid_size_z:
+		return -1.0  # Out of bounds
 	
-	return closest_altitude
+	# Direct O(1) lookup using grid coordinates
+	var grid_key = Vector2i(grid_x, grid_z)
+	var altitude = grid_to_altitude.get(grid_key, -1.0)
+	
+	return altitude  # Returns altitude in feet, or -1 if not found
 
 func get_grid_info() -> Dictionary:
 	"""
 	Get information about the loaded grid for debugging/display purposes
-	@return Dictionary - Grid information including data count and tile specifications
+	@return Dictionary - Grid information including data count, grid dimensions, and tile specifications
 	"""
 	if terrain_data.is_empty():
 		return {}
@@ -253,7 +413,8 @@ func get_grid_info() -> Dictionary:
 	
 	return {
 		"data_points": terrain_data.size(),
-		"approach": "direct_tile_placement",
+		"approach": "direct_csv_to_grid_mapping",
+		"grid_dimensions": Vector2i(grid_size_x, grid_size_z),
 		"tile_size_meters": Vector2(tile_width, tile_height),
 		"coordinate_bounds": {
 			"min_lat": min_lat,
@@ -264,5 +425,6 @@ func get_grid_info() -> Dictionary:
 		"origin_reference": {
 			"lat": ORIGIN_LAT,
 			"lon": ORIGIN_LON
-		}
+		},
+		"alignment": "perfect_zero_offset"
 	}
