@@ -6,6 +6,9 @@ extends Area3D
 const ORIGIN_LAT = 40.55417343  # Reference latitude in decimal degrees (float)
 const ORIGIN_LON = -73.99583928  # Reference longitude in decimal degrees (float)
 
+# Route request timeout behavior control
+const CANCEL_ON_TIMEOUT: bool = true  # If true, cancel flight on timeout; if false, use default route (bool)
+
 # Core identification and position
 var drone_id: String
 var current_position: Vector3
@@ -17,22 +20,20 @@ var model: String = ""
 # Performance attributes - vary by model (simplified for holonomic movement)
 var max_speed: float = 0.0          # Maximum velocity in m/s
 var current_speed: float = 0.0      # Current velocity in m/s
-var max_range: float = 0.0          # Maximum flight range in meters
-var battery_capacity: float = 0.0   # Battery capacity in Wh (Watt-hours)
-var power_consumption: float = 0.0  # Power consumption in W (Watts)
 var payload_capacity: float = 0.0   # Maximum payload in kg
 
 # Runtime state
-var remaining_battery: float = 0.0  # Remaining battery in Wh
 var distance_traveled: float = 0.0  # Total distance traveled in meters
 var flight_time: float = 0.0        # Total flight time in seconds
 
 # Route and waypoint system
 var route: Array = []               # Array of waypoint dictionaries
 var current_waypoint_index: int = 0 # Index of current target waypoint
-var returning: bool = false         # Whether drone is on return journey
+var returning: bool = false         # Whether drone is on return journey (deprecated - kept for compatibility)
 var origin_position: Vector3        # Starting position for return journey
 var destination_position: Vector3   # Final destination position
+var waypoint_wait_timer: float = 0.0  # Timer for waiting at waypoint (float, seconds) - used for destination wait
+var is_waiting_at_waypoint: bool = false  # Flag indicating if drone is waiting at current waypoint (bool)
 
 # Graph node IDs for Python path planning - String type with format like "L0_X0_Y0"
 # These provide direct O(1) lookup in the graph instead of expensive O(n) coordinate matching
@@ -46,6 +47,8 @@ var target_speed: float = 0.0       # Target speed for current segment
 # Response waiting state
 var waiting_for_route_response: bool = false
 var route_response_timer: Timer
+var route_request_sent_time: float = 0.0  # Simulation time when route request was sent (float, seconds)
+var route_response_received_time: float = 0.0  # Simulation time when route response was received (float, seconds)
 
 # Collision detection system - now using Area3D with signals
 var collision_radius: float = 15.0  # Collision detection radius in meters - creates a 60m diameter safety zone
@@ -83,7 +86,6 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 	_set_model_attributes()
 	
 	# Initialize runtime state
-	remaining_battery = battery_capacity
 	distance_traveled = 0.0
 	flight_time = 0.0
 	current_speed = 0.0
@@ -120,10 +122,10 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 			"lat": end.z,    # Godot Z (North/South) → Python latitude
 			"alt": end.y     # Godot Y (Up/Down) → Python altitude
 		},
-		# Drone performance parameters for route optimization
-		"battery_percentage": get_battery_percentage(),  # float: Current battery level (0-100)
+		# Drone performance parameters for route optimization (speed-focused only)
 		"max_speed": max_speed,                          # float: Maximum velocity in m/s
-		"max_range": max_range                           # float: Maximum flight range in meters
+		# Registry synchronization: Send current simulation time for registry cleanup
+		"simulation_time": SimulationEngine.current_simulation_time  # float: Current simulation time in seconds
 	}
 
 	# Convert the dictionary to a JSON string
@@ -132,6 +134,10 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 	# Connect to response signal before sending
 	if not WebSocketManager.data_received.is_connected(_on_route_response_received):
 		WebSocketManager.data_received.connect(_on_route_response_received)
+
+	# Record simulation time when route request is sent
+	route_request_sent_time = SimulationEngine.current_simulation_time  # float: Simulation time in seconds
+	print("🚁 [%s] Route request sent at simulation time: %.3f seconds" % [drone_id, route_request_sent_time])
 
 	# Send the JSON-formatted message
 	WebSocketManager.send_message(message)
@@ -177,27 +183,18 @@ func _set_model_attributes():
 	"""
 	match model:
 		"Long Range FWVTOL":
-			# Fixed-wing VTOL optimized for long range and efficiency
+			# Fixed-wing VTOL optimized for speed performance
 			max_speed = 55.0              # m/s (~200 km/h) - high cruise speed
-			max_range = 150000.0          # meters (150km) - excellent range
-			battery_capacity = 2000.0     # Wh - large battery for long missions
-			power_consumption = 800.0     # W - efficient at cruise speed
 			payload_capacity = 5.0        # kg - substantial cargo capacity
 			
 		"Light Quadcopter":
-			# Small, agile quadcopter for short-range missions
+			# Small, agile quadcopter for speed performance
 			max_speed = 18.0              # m/s (~65 km/h) - moderate speed
-			max_range = 8000.0            # meters (8km) - limited range
-			battery_capacity = 250.0      # Wh - small battery
-			power_consumption = 150.0     # W - efficient for size
 			payload_capacity = 0.5        # kg - minimal payload
 			
 		"Heavy Quadcopter":
-			# Industrial quadcopter for heavy payloads
+			# Industrial quadcopter optimized for speed performance
 			max_speed = 25.0              # m/s (~90 km/h) - good speed despite weight
-			max_range = 15000.0           # meters (15km) - moderate range
-			battery_capacity = 800.0      # Wh - large battery for power needs
-			power_consumption = 400.0     # W - high power for heavy lifting
 			payload_capacity = 8.0        # kg - excellent payload capacity
 			
 		_:
@@ -288,71 +285,28 @@ func _get_cruise_altitude_for_model() -> float:
 
 func _set_current_target():
 	"""
-	Set the current target position and speed based on current waypoint
+	Set the current target position and speed based on current waypoint.
+	Now handles complete round trip routes planned by CBS (origin → destination → origin).
 	"""
 	if current_waypoint_index < route.size():
-		var waypoint = route[current_waypoint_index]
-		target_position = waypoint.position
-		target_speed = min(waypoint.speed, max_speed)  # Respect model max speed
-	else:
-		# No more waypoints - we've completed this leg
-		if not returning:
-			# Start return journey
-			_start_return_journey()
-		else:
-			# Completed full round trip
-			completed = true
-			print("Drone %s completed full round trip mission" % drone_id)
-
-func _start_return_journey():
-	"""
-	Initialize return journey using the same route in reverse
-	"""
-	returning = true
-	current_waypoint_index = 0
-	
-	# Reverse the route waypoints but keep the same structure
-	var return_route: Array = []
-	
-	# Start from current position (destination) back to origin
-	for i in range(route.size() - 1, -1, -1):
-		var original_waypoint = route[i]
-		var return_waypoint = {
-			"position": _mirror_position_for_return(original_waypoint.position),
-			"altitude": original_waypoint.altitude,
-			"speed": original_waypoint.speed,
-			"description": "Return: " + original_waypoint.description
-		}
-		return_route.append(return_waypoint)
-	
-	# Update route to return route
-	route = return_route
-	
-	# Set first return target
-	if route.size() > 0:
-		_set_current_target()
-	
-	print("Drone %s starting return journey with %d waypoints" % [drone_id, route.size()])
-
-func _mirror_position_for_return(original_pos: Vector3) -> Vector3:
-	"""
-	Convert an outbound waypoint position to its return equivalent
-	
-	Args:
-		original_pos: Position from outbound journey
+		# More waypoints available - set next target
+		var waypoint = route[current_waypoint_index]  # Current waypoint dictionary (dict)
 		
-	Returns:
-		Vector3: Corresponding position for return journey
-	"""
-	# For return journey, we mirror positions relative to destination/origin swap
-	# This creates the reverse path with same altitude profile
-	var outbound_progress = origin_position.distance_to(original_pos) / origin_position.distance_to(destination_position)
-	var return_progress = 1.0 - outbound_progress
-	
-	var return_pos = destination_position.lerp(origin_position, return_progress)
-	return_pos.y = original_pos.y  # Keep same altitude
-	
-	return return_pos
+		# Safety check: ensure waypoint has required fields
+		if not waypoint.has("position") or not waypoint.has("speed"):
+			push_warning("Drone %s: Waypoint %d missing required fields (position or speed)" % [drone_id, current_waypoint_index])
+			completed = true  # Mark as completed to prevent further errors
+			return
+		
+		target_position = waypoint.position  # Target position (Vector3)
+		target_speed = min(waypoint.speed, max_speed)  # Respect model max speed (float, m/s)
+	else:
+		# Completed all waypoints - route is complete (CBS planned complete round trip)
+		completed = true
+		print("Drone %s completed full round trip mission (CBS planned)" % drone_id)
+		
+		# Notify Python server that drone has completed its route for registry cleanup
+		_send_completion_message()
 
 func update(delta: float):
 	"""
@@ -367,17 +321,51 @@ func update(delta: float):
 	# Update flight time
 	flight_time += delta
 	
-	# Holonomic movement - direct movement toward target without physics constraints
-	_update_holonomic_movement(delta)
+	# Update waypoint wait timer if waiting
+	if is_waiting_at_waypoint:
+		waypoint_wait_timer += delta  # Increment wait timer (float, seconds)
+		
+		# Check if wait time has elapsed (check every frame, not just when at waypoint)
+		if current_waypoint_index < route.size():
+			var waypoint = route[current_waypoint_index]  # Current waypoint (dict)
+			var waypoint_desc = waypoint.get("description", "")  # Waypoint description (str)
+			
+			# Extract wait duration from waypoint description
+			var wait_duration = 60.0  # Default wait duration (float, seconds)
+			if "Wait" in waypoint_desc:
+				# Parse wait duration from description (e.g., "Wait 60s")
+				var desc_parts = waypoint_desc.split("Wait")  # Split description at "Wait" (Array)
+				if desc_parts.size() > 1:
+					var wait_part = desc_parts[1]  # Part after "Wait" (str)
+					var wait_str = wait_part.split("s")[0].strip_edges()  # Extract number before 's' and remove whitespace (str)
+					if wait_str.is_valid_float():
+						wait_duration = float(wait_str)  # Parse wait duration (float, seconds)
+			
+			# Check if wait time has elapsed
+			if waypoint_wait_timer >= wait_duration:
+				# Wait completed - advance to next waypoint
+				is_waiting_at_waypoint = false  # Clear waiting flag (bool)
+				waypoint_wait_timer = 0.0  # Reset wait timer (float, seconds)
+				print("Drone %s completed wait at waypoint %d - Proceeding to next waypoint" % [drone_id, current_waypoint_index])
+				current_waypoint_index += 1  # Advance to next waypoint (int)
+				
+				# Safety check: ensure we don't go beyond route bounds
+				if current_waypoint_index < route.size():
+					_set_current_target()  # Set new target
+				else:
+					# No more waypoints - route complete
+					completed = true
+					print("Drone %s completed full round trip mission (CBS planned)" % drone_id)
+					_send_completion_message()
+		
+		# Don't move while waiting - speed is already set to 0
+	else:
+		# Holonomic movement - direct movement toward target without physics constraints
+		_update_holonomic_movement(delta)
 	
-	# Update battery consumption
-	_update_battery(delta)
-	
-	# Check if we've reached current waypoint
-	_check_waypoint_reached()
-	
-	# Check completion conditions (battery, range limits)
-	_check_completion_conditions()
+	# Check if we've reached current waypoint (only if not waiting)
+	if not is_waiting_at_waypoint:
+		_check_waypoint_reached()
 	
 	# Synchronize Area3D position with logical drone position for collision detection
 	global_position = current_position
@@ -414,44 +402,31 @@ func _update_holonomic_movement(delta: float):
 
 func _check_waypoint_reached():
 	"""
-	Check if current waypoint has been reached and advance to next waypoint
+	Check if current waypoint has been reached and advance to next waypoint.
+	Handles wait periods at waypoints (e.g., 60s wait at destination).
+	Note: Wait completion is handled in update() function to check every frame.
 	"""
 	var distance_to_target = current_position.distance_to(target_position)
-	var arrival_threshold = 5.0  # 5 meter arrival threshold
+	var arrival_threshold = 5.0  # 5 meter arrival threshold (float, meters)
 	
 	if distance_to_target < arrival_threshold:
 		# Reached current waypoint
-		var _waypoint = route[current_waypoint_index]  # Waypoint data dictionary - prefixed with underscore as it's currently unused but kept for future debugging
-		#print("Drone %s reached waypoint %d: %s" % [drone_id, current_waypoint_index, waypoint.description])
+		var waypoint = route[current_waypoint_index]  # Waypoint data dictionary (dict)
+		var waypoint_desc = waypoint.get("description", "")  # Waypoint description (str)
 		
-		# Advance to next waypoint
-		current_waypoint_index += 1
-		_set_current_target()
+		# Check if this waypoint requires waiting (destination wait)
+		if "Wait" in waypoint_desc and not is_waiting_at_waypoint:
+			# Start waiting at this waypoint
+			is_waiting_at_waypoint = true  # Set waiting flag (bool)
+			waypoint_wait_timer = 0.0  # Reset wait timer (float, seconds)
+			current_speed = 0.0  # Stop movement during wait (float, m/s)
+			print("Drone %s reached waypoint %d: %s - Starting wait" % [drone_id, current_waypoint_index, waypoint_desc])
+			return  # Don't advance waypoint yet - wait first (wait completion handled in update())
+		elif not is_waiting_at_waypoint:
+			# Normal waypoint without wait - advance immediately
+			current_waypoint_index += 1  # Advance to next waypoint (int)
+			_set_current_target()  # Set new target
 
-func _update_battery(delta: float):
-	"""
-	Update battery state based on power consumption
-	
-	Args:
-		delta: Time step in seconds
-	"""
-	# Simple power consumption based on current speed
-	var speed_factor = 1.0 + (current_speed / max_speed) * 0.5  # Higher speed = more power
-	var power_used = power_consumption * speed_factor * (delta / 3600.0)  # Convert to Wh
-	
-	remaining_battery = max(0.0, remaining_battery - power_used)
-
-func _check_completion_conditions():
-	"""
-	Check various conditions that could complete or abort the flight
-	"""
-	if remaining_battery <= 0:
-		completed = true
-		print("Drone %s ran out of battery at position %s" % [drone_id, str(current_position)])
-		
-	elif distance_traveled > max_range:
-		completed = true
-		print("Drone %s exceeded maximum range" % drone_id)
 
 # Area3D collision signal handlers - automatic collision detection
 func _on_area_entered(other_area: Area3D):
@@ -574,9 +549,6 @@ func get_collision_info() -> Dictionary:
 	}
 
 # Getter functions for accessing drone state
-func get_battery_percentage() -> float:
-	"""Returns remaining battery as percentage (0-100)"""
-	return (remaining_battery / battery_capacity) * 100.0
 
 func get_current_waypoint_info() -> Dictionary:
 	"""Returns information about current waypoint target"""
@@ -627,6 +599,11 @@ func _on_route_response_received(data):
 	
 	# Check if this response is for our drone
 	if response_data.has("drone_id") and response_data.drone_id == drone_id:
+		# Record simulation time when route response is received
+		route_response_received_time = SimulationEngine.current_simulation_time  # float: Simulation time in seconds
+		var response_delay = route_response_received_time - route_request_sent_time  # float: Time between request and response in seconds
+		print("✅ [%s] Route response received at simulation time: %.3f seconds (delay: %.3f seconds)" % [drone_id, route_response_received_time, response_delay])
+		
 		# Stop the timeout timer
 		if route_response_timer and not route_response_timer.is_stopped():
 			route_response_timer.stop()
@@ -705,7 +682,27 @@ func _process_server_route(server_route: Array):
 			}
 			route.append(waypoint)  # Add waypoint to route array
 	
-	# Debug output removed for cleaner logs
+	# Debug: Print route information for verification
+	print("Drone %s received route with %d waypoints" % [drone_id, route.size()])
+	if route.size() > 0:
+		print("  First waypoint: %s" % route[0].get("description", "Unknown"))
+		print("  Last waypoint: %s" % route[route.size() - 1].get("description", "Unknown"))
+
+func _send_completion_message():
+	"""
+	Send completion message to Python server to update drone registry.
+	Notifies server that this drone has finished its route.
+	"""
+	# Create completion message dictionary
+	var completion_data = {
+		"type": "drone_completed",
+		"drone_id": drone_id,  # String: Unique drone identifier
+		"simulation_time": SimulationEngine.current_simulation_time  # float: Current simulation time in seconds
+	}
+	
+	# Convert to JSON and send via WebSocket
+	var message = JSON.stringify(completion_data)  # String: JSON-formatted message
+	WebSocketManager.send_message(message)
 
 func _finalize_route_setup():
 	"""
@@ -724,13 +721,25 @@ func _finalize_route_setup():
 func _on_route_response_timeout():
 	"""
 	Handle timeout when no response is received from server
+	Controlled by CANCEL_ON_TIMEOUT constant - can cancel flight or use default route
 	"""
-	push_warning("Timeout waiting for route response for drone %s, using default route" % drone_id)
+	var timeout_time = SimulationEngine.current_simulation_time  # float: Simulation time when timeout occurred (seconds)
+	var timeout_duration = timeout_time - route_request_sent_time  # float: Time elapsed since request was sent (seconds)
+	
+	print("⏱️  [%s] Route response TIMEOUT at simulation time: %.3f seconds (waited: %.3f seconds)" % [drone_id, timeout_time, timeout_duration])
 	
 	# Disconnect from signal to avoid processing late responses
 	if WebSocketManager.data_received.is_connected(_on_route_response_received):
 		WebSocketManager.data_received.disconnect(_on_route_response_received)
 	
-	# Create default route as fallback
-	_create_default_route(origin_position, destination_position)
-	_finalize_route_setup()
+	# Check timeout behavior: cancel flight or use default route
+	if CANCEL_ON_TIMEOUT:
+		# Cancel the flight - mark as completed without route
+		print("❌ [%s] FLIGHT CANCELLED - No route received within timeout period" % drone_id)
+		waiting_for_route_response = false
+		completed = true  # Mark drone as completed (cancelled)
+	else:
+		# Use default route as fallback
+		push_warning("Timeout waiting for route response for drone %s, using default route" % drone_id)
+		_create_default_route(origin_position, destination_position)
+		_finalize_route_setup()
