@@ -473,29 +473,48 @@ func update_drone_position(drone: Drone):
 
 		# Optionally orient the drone to face its next waypoint so its longitudinal axis follows the route
 		if align_drone_to_route:
-			# target_pos_world: Vector3 - the next waypoint position in visualization units (size: 3 floats)
-			var target_pos_world: Vector3 = drone.target_position * visual_scale
+			# Skip orientation if drone is waiting (not moving) to avoid look_at errors
+			# When waiting, current_position == target_position, causing look_at to fail
+			var should_orient: bool = not drone.is_waiting_at_waypoint and drone.current_speed >= 0.01  # Check if should orient (bool)
+			
+			if should_orient:
+				# target_pos_world: Vector3 - the next waypoint position in visualization units (size: 3 floats)
+				var target_pos_world: Vector3 = drone.target_position * visual_scale
 
-			# dir_to_target: Vector3 - direction vector from current node position to next waypoint (size: 3 floats)
-			var dir_to_target: Vector3 = target_pos_world - node.position
+				# dir_to_target: Vector3 - direction vector from current node position to next waypoint (size: 3 floats)
+				var dir_to_target: Vector3 = target_pos_world - node.position
+				var dir_length: float = dir_to_target.length()  # Direction vector length (float)
 
-			# Only orient when the direction vector has meaningful magnitude to avoid zero-length look_at
-			if dir_to_target.length() > 0.0001:
-				# Rotate the node so its -Z axis points toward the waypoint using global up vector
-				node.look_at(target_pos_world, Vector3.UP)
+				# Only orient when the direction vector has meaningful magnitude to avoid zero-length look_at
+				# Also check that direction is not parallel to up vector (which causes look_at to fail)
+				if dir_length > 0.0001:
+					# Normalize direction for parallel check
+					var dir_normalized: Vector3 = dir_to_target / dir_length  # Normalized direction vector (Vector3)
+					
+					# Check if direction is parallel to up vector (cross product will be zero)
+					var cross_product: Vector3 = Vector3.UP.cross(dir_normalized)  # Cross product (Vector3)
+					var is_parallel_to_up: bool = cross_product.length() < 0.0001  # Check if parallel (bool)
+					
+					if not is_parallel_to_up:
+						# Safe to use look_at with UP vector
+						node.look_at(target_pos_world, Vector3.UP)
+					else:
+						# Direction is parallel to UP - use a different up vector (FORWARD) to avoid look_at failure
+						# This handles edge cases where drone is moving straight up/down
+						node.look_at(target_pos_world, Vector3.FORWARD)
 
-				# Apply extra yaw offset if the model forward axis needs correction relative to -Z
-				if model_yaw_offset_degrees != 0.0:
-					node.rotate_y(deg_to_rad(model_yaw_offset_degrees))
+					# Apply extra yaw offset if the model forward axis needs correction relative to -Z
+					if model_yaw_offset_degrees != 0.0:
+						node.rotate_y(deg_to_rad(model_yaw_offset_degrees))
 
-				# Ensure the visual forward actually faces the waypoint. If after applying the yaw offset
-				# the model's forward points away (dot < 0), flip 180 degrees around Y to correct.
-				# forward_world: Vector3 - world-space forward direction assuming -Z is forward (size: 3 floats)
-				var forward_world: Vector3 = (node.global_transform.basis.z).normalized()
-				# dir_norm: Vector3 - normalized desired direction towards the next waypoint (size: 3 floats)
-				var dir_norm: Vector3 = dir_to_target.normalized()
-				if forward_world.dot(dir_norm) < 0.0:
-					node.rotate_y(PI)
+					# Ensure the visual forward actually faces the waypoint. If after applying the yaw offset
+					# the model's forward points away (dot < 0), flip 180 degrees around Y to correct.
+					# forward_world: Vector3 - world-space forward direction assuming -Z is forward (size: 3 floats)
+					var forward_world: Vector3 = (node.global_transform.basis.z).normalized()
+					# dir_norm: Vector3 - normalized desired direction towards the next waypoint (size: 3 floats)
+					var dir_norm: Vector3 = dir_to_target.normalized()
+					if forward_world.dot(dir_norm) < 0.0:
+						node.rotate_y(PI)
 
 func add_drone_port(dp_position: Vector3, port_id: String):
 	var mesh_instance = MeshInstance3D.new()

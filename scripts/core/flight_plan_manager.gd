@@ -11,7 +11,7 @@ var total_plans_processed: int = 0
 
 # Configuration: CSV file path for flight plans data
 # Change this constant to load a different flight plan file
-const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_96 FP_2DP_2Hrs.csv.csv"
+const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Fixed.csv"
 
 const ORIGIN_LAT = 40.55417343
 const ORIGIN_LON = -73.99583928
@@ -78,6 +78,40 @@ func load_flight_plans():
 		print("│ Duration: %.2f seconds (%.2f minutes)" % [duration, duration / 60.0])
 	print("=".repeat(80) + "\n")
 
+func get_plans_needing_route_requests(current_time: float) -> Array:
+	"""
+	Get all flight plans that need route requests sent (10 minutes before ETD)
+	Removes these plans from the queue since they will be handled by RoutePreRequestManager
+	
+	Args:
+		current_time: float - Current simulation time in seconds
+	
+	Returns:
+		Array - Array of Dictionary objects representing flight plans needing route requests
+				Empty array if no plans need route requests
+	
+	Note: This function modifies the queue by removing plans (pop_front)
+		  Plans are removed from queue and will be stored in RoutePreRequestManager pending tracker
+	"""
+	var plans_needing_routes: Array = []  # Array: Flight plans needing route requests
+	
+	# Check front of queue for plans that need route requests (ETD - 600 seconds)
+	# Continue checking while queue has plans and front plan needs route request
+	while not flight_plan_queue.is_empty():
+		# Peek at front plan without removing it yet - Dictionary type
+		var next_plan = flight_plan_queue.front()
+		
+		# Check if this plan needs route request (10 minutes = 600 seconds before ETD)
+		if next_plan.etd_seconds - 600.0 <= current_time:
+			# Remove plan from front of queue and add to route request list
+			plans_needing_routes.append(flight_plan_queue.pop_front())
+		else:
+			# Queue is sorted, so if this plan doesn't need route request, no plans after it do
+			# Break early for efficiency - no need to check remaining plans
+			break
+	
+	return plans_needing_routes  # Return plans that need route requests
+
 func get_next_pending_plans(current_time: float) -> Array:
 	"""
 	Get all flight plans that are ready to launch at the current simulation time
@@ -92,6 +126,7 @@ func get_next_pending_plans(current_time: float) -> Array:
 	
 	Note: This function modifies the queue by removing processed plans (pop_front)
 		  Time complexity is O(k) where k is number of ready plans (much better than O(n))
+		  Note: Most plans should have been removed earlier for route pre-requests
 	"""
 	var plans_to_launch: Array = []
 	

@@ -47,8 +47,11 @@ var target_speed: float = 0.0       # Target speed for current segment
 # Response waiting state
 var waiting_for_route_response: bool = false
 var route_response_timer: Timer
+# Hybrid timing: Track both simulation time and system clock time for accurate communication metrics
 var route_request_sent_time: float = 0.0  # Simulation time when route request was sent (float, seconds)
 var route_response_received_time: float = 0.0  # Simulation time when route response was received (float, seconds)
+var route_request_sent_system_clock_time: float = 0.0  # System clock time when route request was sent (float, seconds since Unix epoch - matches Python time.time())
+var route_response_received_system_clock_time: float = 0.0  # System clock time when route response was received (float, seconds since Unix epoch - matches Python time.time())
 
 # Collision detection system - now using Area3D with signals
 var collision_radius: float = 15.0  # Collision detection radius in meters - creates a 60m diameter safety zone
@@ -57,7 +60,7 @@ var collision_partners: Array = []  # Array of drone IDs currently in collision 
 var collision_shape: CollisionShape3D = null  # Reference to collision shape for Area3D
 
 
-func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, start_node_id: String = "", end_node_id: String = ""):
+func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, start_node_id: String = "", end_node_id: String = "", precomputed_route: Array = []):
 	"""
 	Initialize drone with position, destination and model-specific attributes
 	
@@ -68,6 +71,7 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 		drone_model: String - Type of drone (Long Range FWVTOL, Light Quadcopter, Heavy Quadcopter)
 		start_node_id: String - Origin graph node ID for path planning (e.g., "L0_X0_Y0")
 		end_node_id: String - Destination graph node ID for path planning (e.g., "L0_X6_Y2")
+		precomputed_route: Array - Optional precomputed route waypoints from Python (empty array if not provided)
 	"""
 	drone_id = id
 	current_position = start
@@ -95,61 +99,78 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 	# Set up collision detection using Area3D
 	_setup_collision_detection()
 	
-	# Set up response timeout timer
+	# Set up response timeout timer (only needed if requesting route via WebSocket)
 	route_response_timer = Timer.new()
 	route_response_timer.one_shot = true
-	route_response_timer.wait_time = 10.0  # 10 second timeout - Timer configured to wait 10 seconds before timing out
+	route_response_timer.wait_time = 90.0  # 90 second timeout - Timer configured to wait 90 seconds before timing out
 	route_response_timer.timeout.connect(_on_route_response_timeout)
 	add_child(route_response_timer)
 	
-	# Create a dictionary with the data to include in the message
-	# Using Node IDs for efficient O(1) graph lookup instead of O(n) coordinate matching
-	var message_data = {
-		"type": "request_route",
-		"drone_id": drone_id,
-		"model": model,
-		# PRIMARY: Graph node IDs for fast path planning (String type - direct hash lookup)
-		"start_node_id": origin_node_id,     # e.g., "L0_X0_Y0" - Origin graph node
-		"end_node_id": dest_node_id,         # e.g., "L0_X6_Y2" - Destination graph node
-		# FALLBACK: Coordinate positions if node IDs are not available (float type)
-		"start_position": {
-			"lon": start.x,  # Godot X (East/West) → Python longitude
-			"lat": start.z,  # Godot Z (North/South) → Python latitude  
-			"alt": start.y   # Godot Y (Up/Down) → Python altitude
-		},
-		"end_position": {
-			"lon": end.x,    # Godot X (East/West) → Python longitude
-			"lat": end.z,    # Godot Z (North/South) → Python latitude
-			"alt": end.y     # Godot Y (Up/Down) → Python altitude
-		},
-		# Drone performance parameters for route optimization (speed-focused only)
-		"max_speed": max_speed,                          # float: Maximum velocity in m/s
-		# Registry synchronization: Send current simulation time for registry cleanup
-		"simulation_time": SimulationEngine.current_simulation_time  # float: Current simulation time in seconds
-	}
+	# Check if precomputed route is provided
+	if precomputed_route != null and precomputed_route.size() > 0:
+		# Use precomputed route - skip WebSocket request
+		print("✅ [%s] Using precomputed route (%d waypoints) - skipping WebSocket request" % [drone_id, precomputed_route.size()])
+		
+		# Process the precomputed route (convert from Python format to Godot format)
+		_process_server_route(precomputed_route)
+		
+		# Finalize route setup immediately (drone ready to fly)
+		_finalize_route_setup()
+		
+		# Don't wait for route response - already have it
+		waiting_for_route_response = false
+	else:
+		# No precomputed route - request route via WebSocket (existing behavior)
+		# Create a dictionary with the data to include in the message
+		# Using Node IDs for efficient O(1) graph lookup instead of O(n) coordinate matching
+		var message_data = {
+			"type": "request_route",
+			"drone_id": drone_id,
+			"model": model,
+			# PRIMARY: Graph node IDs for fast path planning (String type - direct hash lookup)
+			"start_node_id": origin_node_id,     # e.g., "L0_X0_Y0" - Origin graph node
+			"end_node_id": dest_node_id,         # e.g., "L0_X6_Y2" - Destination graph node
+			# FALLBACK: Coordinate positions if node IDs are not available (float type)
+			"start_position": {
+				"lon": start.x,  # Godot X (East/West) → Python longitude
+				"lat": start.z,  # Godot Z (North/South) → Python latitude  
+				"alt": start.y   # Godot Y (Up/Down) → Python altitude
+			},
+			"end_position": {
+				"lon": end.x,    # Godot X (East/West) → Python longitude
+				"lat": end.z,    # Godot Z (North/South) → Python latitude
+				"alt": end.y     # Godot Y (Up/Down) → Python altitude
+			},
+			# Drone performance parameters for route optimization (speed-focused only)
+			"max_speed": max_speed,                          # float: Maximum velocity in m/s
+			# Registry synchronization: Send current simulation time for registry cleanup
+			"simulation_time": SimulationEngine.current_simulation_time  # float: Current simulation time in seconds
+		}
 
-	# Convert the dictionary to a JSON string
-	var message = JSON.stringify(message_data)
+		# Hybrid timing: Record both simulation time and system clock time when route request is sent (BEFORE creating message)
+		route_request_sent_time = SimulationEngine.current_simulation_time  # float: Simulation time in seconds (for simulation logic)
+		route_request_sent_system_clock_time = Time.get_unix_time_from_system()  # float: System clock time in seconds since Unix epoch (matches Python time.time())
+		
+		# Include send timestamp in message for network latency calculation on Python side
+		message_data["client_request_sent_time"] = route_request_sent_system_clock_time  # float: System clock time when Godot sent the request (for network latency calculation)
 
-	# Connect to response signal before sending
-	if not WebSocketManager.data_received.is_connected(_on_route_response_received):
-		WebSocketManager.data_received.connect(_on_route_response_received)
+		# Convert the dictionary to a JSON string
+		var message = JSON.stringify(message_data)
 
-	# Record simulation time when route request is sent
-	route_request_sent_time = SimulationEngine.current_simulation_time  # float: Simulation time in seconds
-	print("🚁 [%s] Route request sent at simulation time: %.3f seconds" % [drone_id, route_request_sent_time])
+		# Connect to response signal before sending
+		if not WebSocketManager.data_received.is_connected(_on_route_response_received):
+			WebSocketManager.data_received.connect(_on_route_response_received)
 
-	# Send the JSON-formatted message
-	WebSocketManager.send_message(message)
+		print("🚁 [%s] Route request sent | Sim time: %.3f s | System clock: %.3f s" % [drone_id, route_request_sent_time, route_request_sent_system_clock_time])
+
+		# Send the JSON-formatted message
+		WebSocketManager.send_message(message)
+		
+		# Start waiting for response with timeout
+		waiting_for_route_response = true
+		route_response_timer.start()
 	
-	# Start waiting for response with timeout
-	waiting_for_route_response = true
-	route_response_timer.start()
-	
-	# Wait for response instead of creating default route immediately
-	# Debug output removed - server request is silent for cleaner logs
-	
-	# Set initial target
+	# Set initial target if route already exists
 	if route.size() > 0:
 		_set_current_target()
 
@@ -599,10 +620,31 @@ func _on_route_response_received(data):
 	
 	# Check if this response is for our drone
 	if response_data.has("drone_id") and response_data.drone_id == drone_id:
-		# Record simulation time when route response is received
-		route_response_received_time = SimulationEngine.current_simulation_time  # float: Simulation time in seconds
-		var response_delay = route_response_received_time - route_request_sent_time  # float: Time between request and response in seconds
-		print("✅ [%s] Route response received at simulation time: %.3f seconds (delay: %.3f seconds)" % [drone_id, route_response_received_time, response_delay])
+		# Hybrid timing: Record both simulation time and system clock time when route response is received
+		route_response_received_time = SimulationEngine.current_simulation_time  # float: Simulation time in seconds (for simulation logic)
+		route_response_received_system_clock_time = Time.get_unix_time_from_system()  # float: System clock time in seconds since Unix epoch (matches Python time.time())
+		
+		# Calculate delays using both time references
+		var sim_delay = route_response_received_time - route_request_sent_time  # float: Simulation time delay in seconds (affected by pause/speed)
+		var system_clock_delay_sec = route_response_received_system_clock_time - route_request_sent_system_clock_time  # float: Actual network/processing delay in seconds (system clock time)
+		
+		# Extract server-side timestamps if available (for end-to-end correlation)
+		var server_request_received_time = response_data.get("server_request_received_time", 0.0)  # float: System clock time when server received request (seconds)
+		var server_response_sent_time = response_data.get("server_response_sent_time", 0.0)  # float: System clock time when server sent response (seconds)
+		var pathfinding_duration = response_data.get("pathfinding_duration", 0.0)  # float: Pathfinding processing time in seconds
+		
+		# Log comprehensive timing information
+		print("✅ [%s] Route response received" % drone_id)
+		print("   │ Simulation timing: Received at %.3f s (sim delay: %.3f s)" % [route_response_received_time, sim_delay])
+		print("   │ System clock timing:")
+		print("   │   Request sent:     %.3f s" % route_request_sent_system_clock_time)
+		print("   │   Response received: %.3f s" % route_response_received_system_clock_time)
+		print("   │   Round-trip time:  %.3f s (%.1f ms)" % [system_clock_delay_sec, system_clock_delay_sec * 1000.0])
+		if server_request_received_time > 0.0 and server_response_sent_time > 0.0:
+			var server_processing_time = server_response_sent_time - server_request_received_time  # float: Total server processing time in seconds
+			print("   │ Server timing: Request received at %.3f s, Response sent at %.3f s (processing: %.3f s)" % [server_request_received_time, server_response_sent_time, server_processing_time])
+			if pathfinding_duration > 0.0:
+				print("   │ Pathfinding duration: %.3f s" % pathfinding_duration)
 		
 		# Stop the timeout timer
 		if route_response_timer and not route_response_timer.is_stopped():
@@ -612,12 +654,24 @@ func _on_route_response_received(data):
 		if WebSocketManager.data_received.is_connected(_on_route_response_received):
 			WebSocketManager.data_received.disconnect(_on_route_response_received)
 		
+		# Check if pathfinding timed out on the server (status: "timeout")
+		if response_data.has("status") and response_data.status == "timeout":
+			# Pathfinding failed - no route found within 3 seconds
+			var timeout_message = response_data.get("message", "No route found within timeout period")  # String: Error message from server
+			print("❌ [%s] PATHFINDING FAILED - No route found within 3 seconds" % drone_id)
+			print("   │ Server message: %s" % timeout_message)
+			print("   │ Flight cancelled - drone will not fly")
+			waiting_for_route_response = false  # bool: Reset waiting flag
+			completed = true  # bool: Mark drone as completed (cancelled) so it won't fly
+			return  # Exit early - don't process route or finalize setup
+		
+		# Check if a valid route was provided
 		if response_data.has("route") and response_data.route is Array:
 			# Use server-provided route
 			_process_server_route(response_data.route)
 		else:
+			# No route provided and not a timeout - fall back to default route
 			push_warning("No valid route in response, using default route for drone %s" % drone_id)
-			# Fall back to default route
 			_create_default_route(origin_position, destination_position)
 		
 		_finalize_route_setup()
@@ -723,10 +777,15 @@ func _on_route_response_timeout():
 	Handle timeout when no response is received from server
 	Controlled by CANCEL_ON_TIMEOUT constant - can cancel flight or use default route
 	"""
+	# Hybrid timing: Record both simulation time and system clock time when timeout occurs
 	var timeout_time = SimulationEngine.current_simulation_time  # float: Simulation time when timeout occurred (seconds)
-	var timeout_duration = timeout_time - route_request_sent_time  # float: Time elapsed since request was sent (seconds)
+	var timeout_system_clock_time = Time.get_unix_time_from_system()  # float: System clock time when timeout occurred (seconds since Unix epoch)
+	var sim_timeout_duration = timeout_time - route_request_sent_time  # float: Simulation time elapsed since request was sent (seconds)
+	var system_clock_timeout_duration_sec = timeout_system_clock_time - route_request_sent_system_clock_time  # float: Actual system clock time elapsed since request was sent (seconds)
 	
-	print("⏱️  [%s] Route response TIMEOUT at simulation time: %.3f seconds (waited: %.3f seconds)" % [drone_id, timeout_time, timeout_duration])
+	print("⏱️  [%s] Route response TIMEOUT" % drone_id)
+	print("   │ Simulation timing: Timeout at %.3f s (sim wait: %.3f s)" % [timeout_time, sim_timeout_duration])
+	print("   │ System clock timing: Timeout at %.3f s (actual wait: %.3f s)" % [timeout_system_clock_time, system_clock_timeout_duration_sec])
 	
 	# Disconnect from signal to avoid processing late responses
 	if WebSocketManager.data_received.is_connected(_on_route_response_received):

@@ -7,7 +7,7 @@ var visualization_system: VisualizationSystem
 func set_visualization_system(vis_system: VisualizationSystem):
 	visualization_system = vis_system
 
-func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, origin_node_id: String = "", dest_node_id: String = "") -> Drone:
+func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, origin_node_id: String = "", dest_node_id: String = "", precomputed_route: Array = []) -> Drone:
 	"""
 	Create a test drone instance and initialize it with flight parameters
 	
@@ -18,6 +18,7 @@ func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, 
 		model: String - Drone model type (e.g., "Heavy Quadcopter")
 		origin_node_id: String - Origin graph node ID for Python path planning (e.g., "L0_X0_Y0")
 		dest_node_id: String - Destination graph node ID for Python path planning (e.g., "L0_X6_Y2")
+		precomputed_route: Array - Optional precomputed route waypoints from Python (empty array if not provided)
 	
 	Returns:
 		Drone - The created and initialized drone instance
@@ -42,7 +43,8 @@ func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, 
 	
 	# Initialize drone after adding to scene tree to ensure all child nodes (like timers) are properly connected
 	# Pass both Vector3 positions (for Godot navigation) and Node IDs (for efficient Python path planning)
-	drone.initialize(id, start, end, model, origin_node_id, dest_node_id)
+	# If precomputed_route is provided, drone will use it instead of requesting route via WebSocket
+	drone.initialize(id, start, end, model, origin_node_id, dest_node_id, precomputed_route)
 	
 	# Note: Collision detection now handled automatically by Area3D signals
 	# No need to set collision manager reference anymore

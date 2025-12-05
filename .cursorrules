@@ -1,0 +1,94 @@
+# Godot UAV Simulator - Cursor Rules
+
+## Documentation-First Development Workflow
+
+### CRITICAL: Documentation Maintenance Rule
+
+**BEFORE making any code modifications:**
+1. **ALWAYS** read and review `ARCHITECTURE.md` and `README.md` to understand:
+   - Current system architecture and component responsibilities
+   - Existing patterns and conventions
+   - Data flow and component interactions
+   - Documented interfaces and protocols
+
+2. Use the documentation to:
+   - Understand where your changes fit in the architecture
+   - Identify affected components and their dependencies
+   - Follow established patterns and conventions
+   - Ensure consistency with existing design decisions
+
+**AFTER making any code modifications:**
+1. **MANDATORY**: Update `ARCHITECTURE.md` if your changes affect:
+   - Component responsibilities or interfaces
+   - Data structures or data flow
+   - System architecture or component relationships
+   - New components or removal of components
+   - Protocol changes (WebSocket messages, data formats)
+   - Performance characteristics or timing systems
+   - Error handling patterns
+   - Extension points
+
+2. **MANDATORY**: Update `README.md` if your changes affect:
+   - User-facing features or functionality
+   - System requirements or dependencies
+   - Setup or installation instructions
+   - Usage examples or quick start guide
+   - Configuration options
+   - Troubleshooting information
+   - Project structure or file organization
+
+3. **Documentation Update Checklist:**
+   - [ ] Component descriptions updated if responsibilities changed
+   - [ ] Data flow diagrams updated if flow changed
+   - [ ] Function signatures documented if interfaces changed
+   - [ ] Constants and values updated if changed
+   - [ ] Examples updated if protocols changed
+   - [ ] Version number incremented if major changes
+   - [ ] "Last Updated" timestamp updated
+
+### Documentation as Source of Truth
+
+- `ARCHITECTURE.md` and `README.md` are the **source of truth** for this project
+- Code should match what is documented
+- Documentation should match what is implemented
+- When discrepancies are found, fix both code AND documentation
+
+### Code Modification Guidelines
+
+1. **Follow Documented Patterns**: Use existing patterns documented in ARCHITECTURE.md
+2. **Maintain Consistency**: Follow naming conventions and architectural decisions already documented
+3. **Update Cross-References**: When modifying components, update all references in documentation
+4. **Preserve History**: When updating documentation, preserve important historical context in comments
+
+### Specific Areas Requiring Documentation Updates
+
+**Always update ARCHITECTURE.md when:**
+- Adding/removing components or classes
+- Changing component responsibilities
+- Modifying data structures (Dictionary keys, Array formats)
+- Changing WebSocket message formats
+- Modifying timing systems or performance characteristics
+- Adding new extension points
+- Changing error handling behavior
+
+**Always update README.md when:**
+- Adding/removing features
+- Changing system requirements
+- Modifying setup instructions
+- Updating examples or usage patterns
+- Changing configuration options
+- Adding new data files or dependencies
+
+### Verification
+
+After modifications:
+- Verify code matches updated documentation
+- Verify documentation accurately describes code
+- Check for broken cross-references
+- Ensure examples in documentation still work
+- Test that documented interfaces match implementation
+
+---
+
+**Remember**: Documentation is not optional. It is part of the development process. Code changes without documentation updates are incomplete.
+

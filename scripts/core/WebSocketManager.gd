@@ -1,5 +1,9 @@
 extends Node
 
+# Get DebugLogger singleton instance helper
+# Use logger_instance instead of DebugLogger directly to avoid class_name conflict
+var logger_instance: Node = null
+
 # Signal emitted when the WebSocket connection is successfully established
 signal connected
 # Signal emitted when the WebSocket connection is closed or lost
@@ -14,12 +18,21 @@ var reconnect_timer = null
 var is_connected = false
 
 func _ready():
-	print("\n" + "=".repeat(80))
-	print("│ 🌐 WEBSOCKET CLIENT MANAGER")
-	print("=".repeat(80))
-	print("│ Initializing connection to Python server...")
-	print("│ Target: %s" % default_url)
-	print("=".repeat(80) + "\n")
+	# Get DebugLogger singleton instance (autoload singleton)
+	logger_instance = DebugLogger.get_instance()
+	if logger_instance == null:
+		push_error("DebugLogger autoload singleton not found! Make sure it's added in Project Settings → Autoload")
+	
+	if logger_instance and logger_instance.should_show_verbose():
+		print("\n" + "=".repeat(80))
+		print("│ 🌐 WEBSOCKET CLIENT MANAGER")
+		print("=".repeat(80))
+		print("│ Initializing connection to Python server...")
+		print("│ Target: %s" % default_url)
+		print("=".repeat(80) + "\n")
+	else:
+		if logger_instance:
+			logger_instance.log_info(DebugLogger.Category.WEBSOCKET, "Initializing connection to Python server at %s" % default_url, {"url": default_url})
 	
 	# Create reconnect timer
 	reconnect_timer = Timer.new()
@@ -33,39 +46,54 @@ func _ready():
 func connect_to_server(url):
 	var err = ws_peer.connect_to_url(url)
 	if err != OK:
-		print("│ ❌ Connection failed (Error: %d)" % err)
+		if logger_instance:
+			logger_instance.log_error(DebugLogger.Category.WEBSOCKET, "Connection failed (Error: %d)" % err, {"error_code": err, "url": url})
 		schedule_reconnect()
 		
-# Called every frame; used to poll the WebSocket for new events and data
-func _process(_delta):
-	ws_peer.poll()
+# Called every physics frame (100Hz) to poll WebSocket for new events and data
+# Moved from _process() to _physics_process() to match simulation rate and prevent message delays
+func _physics_process(_delta):
+	ws_peer.poll()  # Poll WebSocket connection for new events (float: delta time in seconds)
 	
-	# Check connection state
-	var state = ws_peer.get_ready_state()
+	# Check connection state - WebSocketPeer state enum (int)
+	var state = ws_peer.get_ready_state()  # Get current WebSocket connection state (int)
 	#print("WebSocket state: ", state)
 	
 	if state == WebSocketPeer.STATE_OPEN:
+		# Connection is open and ready for communication
 		if not is_connected:
-			print("├" + "─".repeat(78) + "┤")
-			print("│ ✅ CONNECTION ESTABLISHED")
-			print("│ Status: Connected to %s" % default_url)
-			print("└" + "─".repeat(78) + "┘\n")
-			is_connected = true
-			emit_signal("connected")
+			# First time connection established - emit signal and update status
+			if logger_instance and logger_instance.should_show_verbose():
+				print("├" + "─".repeat(78) + "┤")
+				print("│ ✅ CONNECTION ESTABLISHED")
+				print("│ Status: Connected to %s" % default_url)
+				print("└" + "─".repeat(78) + "┘\n")
+			else:
+				if logger_instance:
+					logger_instance.log_info(DebugLogger.Category.WEBSOCKET, "Connection established to %s" % default_url, {"url": default_url})
+			is_connected = true  # Update connection flag (bool)
+			emit_signal("connected")  # Emit connection signal for other systems
 	elif state == WebSocketPeer.STATE_CLOSED:
+		# Connection closed or lost - attempt reconnection
 		if is_connected:
-			print("\n" + "├" + "─".repeat(78) + "┤")
-			print("│ ⚠ CONNECTION LOST")
-			print("│ Attempting to reconnect...")
-			print("└" + "─".repeat(78) + "┘\n")
-			is_connected = false
-			emit_signal("disconnected")
-			schedule_reconnect()
+			# Connection was previously open but now closed
+			if logger_instance and logger_instance.should_show_verbose():
+				print("\n" + "├" + "─".repeat(78) + "┤")
+				print("│ ⚠ CONNECTION LOST")
+				print("│ Attempting to reconnect...")
+				print("└" + "─".repeat(78) + "┘\n")
+			else:
+				if logger_instance:
+					logger_instance.log_warning(DebugLogger.Category.WEBSOCKET, "Connection lost - attempting to reconnect", {"url": default_url})
+			is_connected = false  # Update connection flag (bool)
+			emit_signal("disconnected")  # Emit disconnection signal for other systems
+			schedule_reconnect()  # Schedule automatic reconnection attempt
 	
-	# Process messages
+	# Process all available messages from WebSocket server
+	# Loop through all queued packets to ensure no messages are missed
 	while ws_peer.get_available_packet_count() > 0:
-		var packet = ws_peer.get_packet()
-		emit_signal("data_received", packet)
+		var packet = ws_peer.get_packet()  # Get next available packet (PackedByteArray)
+		emit_signal("data_received", packet)  # Emit signal with packet data for route handlers
 		#print("Received data: ", packet.get_string_from_utf8())
 
 func schedule_reconnect():
@@ -81,5 +109,6 @@ func send_message(message):
 		ws_peer.send_text(message)
 		return true
 	else:
-		push_warning("Cannot send message - WebSocket not connected to server")
+		if logger_instance:
+			logger_instance.log_warning(DebugLogger.Category.WEBSOCKET, "Cannot send message - WebSocket not connected to server")
 		return false

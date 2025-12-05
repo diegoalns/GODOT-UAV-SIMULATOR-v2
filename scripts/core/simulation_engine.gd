@@ -1,10 +1,15 @@
 class_name SimulationEngine
 extends Node
 
+# Get DebugLogger singleton instance (autoload singleton)
+# Access via: logger_instance instead of DebugLogger directly
+var logger_instance: Node = null
+
 @onready var drone_manager = DroneManager.new()
 @onready var flight_plan_manager = FlightPlanManager.new()
 @onready var visualization_system = VisualizationSystem.new()
 @onready var logger = SimpleLogger.new()
+@onready var route_pre_request_manager = RoutePreRequestManager.new()
 
 var simulation_time: float = 0.0
 # Static reference for global access to simulation time
@@ -17,10 +22,16 @@ var headless_mode: bool = false
 var ui: SimpleUI  # Store UI instance for access in _physics_process
 
 func _ready():
+	# Get DebugLogger singleton instance (autoload singleton)
+	logger_instance = DebugLogger.get_instance()
+	if logger_instance == null:
+		push_error("DebugLogger autoload singleton not found! Make sure it's added in Project Settings → Autoload")
+	
 	add_child(visualization_system)
 	add_child(drone_manager)
 	add_child(flight_plan_manager)
 	add_child(logger)
+	add_child(route_pre_request_manager)
 
 	# Connect systems
 	drone_manager.set_visualization_system(visualization_system)
@@ -77,35 +88,88 @@ func _physics_process(delta: float):
 	current_simulation_time = simulation_time  # Update static reference for global access
 	real_runtime += delta
 	
+	# Phase 1: Route Pre-Requests (10 minutes before ETD)
+	# Get all flight plans that need route requests sent (removes them from queue)
+	var plans_needing_routes = flight_plan_manager.get_plans_needing_route_requests(simulation_time)
+	
+	# Send route requests for plans needing them
+	for plan in plans_needing_routes:
+		# Send route request via RoutePreRequestManager (plan removed from queue)
+		route_pre_request_manager.send_route_request(plan)
+	
+	# Check for timed-out route requests
+	route_pre_request_manager.check_timeouts(simulation_time)
+	
+	# Phase 2: Drone Creation from Heap (at ETD)
+	# Check min-heap for routes ready at their ETD
+	while not route_pre_request_manager.is_heap_empty():
+		var earliest_route = route_pre_request_manager.peek_earliest_route()  # Dictionary: Route entry with earliest ETD
+		
+		# Check if this route's ETD has been reached
+		if earliest_route.has("etd") and earliest_route.etd <= simulation_time:
+			# ETD reached - pop route from heap and create drone
+			var route_entry = route_pre_request_manager.pop_earliest_route()  # Dictionary: Route entry popped from heap
+			var plan_data = route_entry.plan_data  # Dictionary: Full flight plan data
+			
+			# Convert latitude/longitude coordinates to Vector3 world positions
+			var origin = flight_plan_manager.latlon_to_position(plan_data.origin_lat, plan_data.origin_lon)  # Vector3: Origin position
+			var destination = flight_plan_manager.latlon_to_position(plan_data.dest_lat, plan_data.dest_lon)  # Vector3: Destination position
+			
+			# Print drone launch information
+			var route_info = "%s → %s" % [plan_data.origin_node_id, plan_data.dest_node_id]  # String: Route node info
+			if logger_instance:
+				logger_instance.log_info(DebugLogger.Category.DRONE, "Launching %s with precomputed route (ETD: %.1fs) | Route: %s" % [plan_data.id, plan_data.etd_seconds, route_info], {"drone_id": plan_data.id, "etd": plan_data.etd_seconds, "route": route_info})
+			
+			# Create drone with precomputed route (route already received from Python)
+			drone_manager.create_test_drone(
+				plan_data.id,  # String: Flight plan ID
+				origin,  # Vector3: Origin position
+				destination,  # Vector3: Destination position
+				plan_data.model,  # String: Drone model type
+				plan_data.origin_node_id,  # String: Origin graph node ID
+				plan_data.dest_node_id,  # String: Destination graph node ID
+				route_entry.route  # Array: Precomputed route waypoints
+			)
+		else:
+			# No more routes ready at current time
+			break
+	
+	# Phase 3: Handle any remaining plans in queue (shouldn't happen, but fallback)
 	# Queue-based drone launching - efficient O(k) where k = number of ready plans
 	# Get all flight plans ready to launch at current simulation time
 	# This function automatically removes processed plans from the queue
 	var plans_to_launch = flight_plan_manager.get_next_pending_plans(simulation_time)
 	
 	# Launch each ready drone - Array of Dictionary objects
-	# Print table header only when launching drones
+	# Print table header only when launching drones (only in VERBOSE mode)
 	if plans_to_launch.size() > 0:
-		print("\n" + "─".repeat(90))
-		print("│ 🚁 LAUNCHING DRONES - Simulation Time: %.2f seconds" % simulation_time)
-		print("├" + "─".repeat(12) + "┬" + "─".repeat(20) + "┬" + "─".repeat(20) + "┬" + "─".repeat(34) + "┤")
-		print("│ %-10s │ %-18s │ %-18s │ %-32s │" % ["Drone ID", "Model", "ETD (sec)", "Route (Nodes)"])
-		print("├" + "─".repeat(12) + "┼" + "─".repeat(20) + "┼" + "─".repeat(20) + "┼" + "─".repeat(34) + "┤")
+		if logger_instance and logger_instance.should_show_tables():
+			print("\n" + "─".repeat(90))
+			print("│ 🚁 LAUNCHING DRONES - Simulation Time: %.2f seconds" % simulation_time)
+			print("├" + "─".repeat(12) + "┬" + "─".repeat(20) + "┬" + "─".repeat(20) + "┬" + "─".repeat(34) + "┤")
+			print("│ %-10s │ %-18s │ %-18s │ %-32s │" % ["Drone ID", "Model", "ETD (sec)", "Route (Nodes)"])
+			print("├" + "─".repeat(12) + "┼" + "─".repeat(20) + "┼" + "─".repeat(20) + "┼" + "─".repeat(34) + "┤")
+		elif logger_instance:
+			logger_instance.log_info(DebugLogger.Category.DRONE, "Launching %d drone(s) at simulation time %.2f seconds" % [plans_to_launch.size(), simulation_time], {"drone_count": plans_to_launch.size(), "simulation_time": simulation_time})
 	
 	for plan in plans_to_launch:
 		# Convert latitude/longitude coordinates to Vector3 world positions
 		var origin = flight_plan_manager.latlon_to_position(plan.origin_lat, plan.origin_lon)
 		var destination = flight_plan_manager.latlon_to_position(plan.dest_lat, plan.dest_lon)
 		
-		# Print drone launch information in table format
+		# Print drone launch information (table format in VERBOSE, simple log otherwise)
 		var route_info = "%s → %s" % [plan.origin_node_id, plan.dest_node_id]
-		print("│ %-10s │ %-18s │ %-18.2f │ %-32s │" % [plan.id, plan.model, plan.etd_seconds, route_info])
+		if logger_instance and logger_instance.should_show_tables():
+			print("│ %-10s │ %-18s │ %-18.2f │ %-32s │" % [plan.id, plan.model, plan.etd_seconds, route_info])
+		elif logger_instance:
+			logger_instance.log_info(DebugLogger.Category.DRONE, "Launching %s (%s) | ETD: %.2fs | Route: %s" % [plan.id, plan.model, plan.etd_seconds, route_info], {"drone_id": plan.id, "model": plan.model, "etd": plan.etd_seconds, "route": route_info})
 		
 		# Create and initialize the drone with route request to Python server
 		# Pass both Vector3 positions (for Godot) and Node IDs (for Python path planning)
 		drone_manager.create_test_drone(plan.id, origin, destination, plan.model, plan.origin_node_id, plan.dest_node_id)
 	
-	# Close the table if drones were launched
-	if plans_to_launch.size() > 0:
+	# Close the table if drones were launched (only in VERBOSE mode)
+	if plans_to_launch.size() > 0 and logger_instance and logger_instance.should_show_tables():
 		print("└" + "─".repeat(12) + "┴" + "─".repeat(20) + "┴" + "─".repeat(20) + "┴" + "─".repeat(34) + "┘")
 	
 	# Update all created drones
