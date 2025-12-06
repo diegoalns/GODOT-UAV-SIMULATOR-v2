@@ -64,6 +64,9 @@ func _ready():
 	ui.speed_changed.connect(_on_speed_changed)
 	ui.headless_mode_changed.connect(_on_headless_mode_changed)
 	ui.port_selected.connect(_on_port_selected)
+	
+	# Connect active drones panel to DroneManager
+	ui.set_drone_manager(drone_manager)  # Pass DroneManager reference to UI for active drones display (void)
 
 func _on_start_requested():
 	running = true

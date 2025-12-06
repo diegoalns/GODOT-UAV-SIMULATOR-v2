@@ -1,7 +1,8 @@
 class_name VisualizationSystem
 extends Node3D
 
-var drone_meshes: Dictionary = {}
+var drone_meshes: Dictionary = {}  # Dictionary mapping drone_id (str) to visual Node3D nodes
+var drone_labels: Dictionary = {}  # Dictionary mapping drone_id (str) to Label3D nodes for displaying drone information
 var enabled: bool = true
 var balloon_ref: CharacterBody3D = null  # Reference to the balloon
 
@@ -10,7 +11,7 @@ var terrain_gridmap: GridMap = null  # GridMap node for terrain visualization
 var gridmap_manager: GridMapManager = null  # Manager for terrain data and population
 
 # Movement and control variables
-var move_speed = 1000000.0  # Speed for movement
+var move_speed = 100000.0  # Speed for movement
 var rotation_speed = 0.001  # Speed of rotation with mouse
 var mouse_sensitivity = 0.001
 var camera_offset = Vector3(0, 5, 0)  # Offset from balloon position - slightly above center for better view
@@ -36,6 +37,13 @@ var align_drone_to_route: bool = true
 
 # model_yaw_offset_degrees: float - additional yaw angle to correct the model's intrinsic forward axis if it is not -Z (size: 1 scalar in degrees)
 var model_yaw_offset_degrees: float = 0.0
+
+# Drone label configuration
+var show_drone_labels: bool = true  # bool: Whether to display labels above drones (default: true)
+var label_offset_height: float = 50.0  # float: Vertical offset in meters above drone for label positioning (size: 1 float in meters, reduced from 200.0 for better visibility)
+var label_font_size: int = 32  # int: Font size for drone labels in pixels (size: 1 int, increased from 24 for better readability)
+var label_pixel_size: float = 1  # float: Pixel size for 3D text scaling - controls label size in 3D space (size: 1 float, increased from 0.001 for better visibility)
+var label_billboard_mode: BaseMaterial3D.BillboardMode = BaseMaterial3D.BILLBOARD_ENABLED  # BaseMaterial3D.BillboardMode: Billboard mode - labels always face camera (enum)
 
 func set_enabled(enable: bool):
 	enabled = enable
@@ -334,7 +342,7 @@ func setup_balloon():
 	balloon_ref.add_child(collision)
 	
 	# Set initial position at grid origin (0, 100, 0)
-	balloon_ref.global_position = Vector3(10000, 5000, 1000) * visual_scale
+	balloon_ref.global_position = Vector3(3000, 1000, -22000) * visual_scale
 
 func _input(event):
 	# Toggle mouse capture with Escape key
@@ -440,6 +448,39 @@ func add_drone(drone: Drone):
 	add_child(drone_node)
 	drone_meshes[drone.drone_id] = drone_node
 
+	# Create Label3D for displaying drone information above the drone
+	if show_drone_labels:
+		# label_node: Label3D - 3D text label node for displaying drone information (size: one Label3D reference)
+		var label_node = Label3D.new()
+		label_node.name = "DroneLabel_" + drone.drone_id  # Set unique name for debugging (str)
+		
+		# Configure label text - display drone ID and model type
+		var label_text: String = drone.drone_id  # String: Label text showing drone ID
+		if drone.model != "":
+			label_text += "\n" + drone.model  # Append model type on second line if available (str)
+		label_node.text = label_text  # Set the label text content (str)
+		
+		# Configure label appearance
+		label_node.font_size = label_font_size  # Set font size in pixels (int)
+		label_node.billboard = label_billboard_mode  # Enable billboard mode so label always faces camera (BaseMaterial3D.BillboardMode enum)
+		label_node.modulate = Color.WHITE  # Set label color to white for visibility (Color)
+		label_node.outline_modulate = Color.BLACK  # Set outline color to black for text contrast (Color)
+		label_node.outline_size = 48  # Set outline size in pixels for better readability (int, increased from 8)
+		label_node.pixel_size = label_pixel_size  # Set pixel size for 3D text scaling - larger value makes text bigger in 3D space (float)
+		label_node.no_depth_test = true  # Disable depth testing so labels are always visible even if objects are in front (bool)
+		label_node.shaded = false  # Disable shading so labels remain bright and visible (bool)
+		label_node.visible = true  # Ensure label is visible (bool)
+		
+		# Position label above the drone (offset on Y axis)
+		label_node.position = Vector3(0, label_offset_height * visual_scale, 0)  # Position label above drone (Vector3 of 3 floats)
+		
+		# Add label as child of drone visual node so it moves with the drone
+		drone_node.add_child(label_node)  # Attach label to drone visual node
+		drone_labels[drone.drone_id] = label_node  # Store label reference in dictionary for later updates (dict entry: str -> Label3D)
+		
+		# Debug: Verify label was created and positioned correctly
+		print("Created label for drone %s at offset (0, %.1f, 0)" % [drone.drone_id, label_offset_height * visual_scale])
+	
 	#print("Added visualization for drone %s" % drone.drone_id)
 
 func remove_drone(drone: Drone):
@@ -453,11 +494,19 @@ func remove_drone(drone: Drone):
 		return
 	
 	# Check if this drone has a visual representation
+	var had_visualization: bool = drone_meshes.has(drone.drone_id) or drone_labels.has(drone.drone_id)  # bool: Track if drone had any visualization
+	
 	if drone_meshes.has(drone.drone_id):
 		# drone_node: Node3D - the visual node to be removed (size: one node reference)
 		var drone_node = drone_meshes[drone.drone_id]
-		drone_node.queue_free()  # Remove the visual node from the scene tree
-		drone_meshes.erase(drone.drone_id)  # Remove the reference from the dictionary
+		drone_node.queue_free()  # Remove the visual node from the scene tree (label is child, so it will be removed automatically)
+		drone_meshes.erase(drone.drone_id)  # Remove the reference from the dictionary (dict entry: str -> Node3D)
+	
+	# Remove label reference if it exists (label is child of drone_node, so it's already freed, but clean up dictionary)
+	if drone_labels.has(drone.drone_id):
+		drone_labels.erase(drone.drone_id)  # Remove label reference from dictionary (dict entry: str -> Label3D)
+	
+	if had_visualization:
 		print("Removed visualization for drone %s" % drone.drone_id)
 
 func update_drone_position(drone: Drone):
@@ -470,6 +519,28 @@ func update_drone_position(drone: Drone):
 
 		# Update position: multiply by visual_scale to convert world meters to visualization units (size: Vector3 of 3 floats)
 		node.position = drone.current_position * visual_scale
+		
+		# Update label text with current drone information (speed, status, etc.)
+		if show_drone_labels and drone.drone_id in drone_labels:
+			# label: Label3D - label node for this drone (size: one Label3D reference)
+			var label: Label3D = drone_labels[drone.drone_id]
+			
+			# Build label text with drone ID, model, and current speed
+			var label_text: String = drone.drone_id  # String: Base label text with drone ID
+			if drone.model != "":
+				label_text += "\n" + drone.model  # Append model type on second line (str)
+			
+			# Add current speed information if drone is moving
+			if drone.current_speed > 0.1:  # Only show speed if drone is moving (threshold: 0.1 m/s)
+				label_text += "\n%.1f m/s" % drone.current_speed  # Append speed on third line (str, formatted float)
+			
+			# Add status information if drone is waiting or completed
+			if drone.is_waiting_at_waypoint:
+				label_text += "\nWaiting"  # Append waiting status (str)
+			elif drone.completed:
+				label_text += "\nCompleted"  # Append completed status (str)
+			
+			label.text = label_text  # Update label text content (str)
 
 		# Optionally orient the drone to face its next waypoint so its longitudinal axis follows the route
 		if align_drone_to_route:

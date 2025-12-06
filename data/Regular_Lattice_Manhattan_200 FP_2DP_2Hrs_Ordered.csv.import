@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cfdq6nbpbu25t"
+
+[deps]
+
+files=["res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DronePortID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.OriginLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.OriginLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.OriginNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DestinationLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DestinationLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DestinationNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DroneModel.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.EstimatedFlightTime.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.Ceiling.translation"]
+
+source_file="res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv"
+dest_files=["res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DronePortID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.ETD.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.OriginLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.OriginLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.OriginNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DestinationLat.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DestinationLon.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DestinationNodeID.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.DroneModel.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.EstimatedFlightTime.translation", "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.Ceiling.translation"]
+
+[params]
+
+compress=true
+delimiter=0

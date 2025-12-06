@@ -25,6 +25,7 @@ var payload_capacity: float = 0.0   # Maximum payload in kg
 # Runtime state
 var distance_traveled: float = 0.0  # Total distance traveled in meters
 var flight_time: float = 0.0        # Total flight time in seconds
+var first_waypoint_time: float = -1.0  # Simulation time when first waypoint should be reached (float, seconds) - set to -1.0 if not yet determined
 
 # Route and waypoint system
 var route: Array = []               # Array of waypoint dictionaries
@@ -95,6 +96,7 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 	current_speed = 0.0
 	returning = false
 	current_waypoint_index = 0
+	first_waypoint_time = -1.0  # Will be set when route request is sent or route is received (float, seconds)
 	
 	# Set up collision detection using Area3D
 	_setup_collision_detection()
@@ -110,6 +112,9 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 	if precomputed_route != null and precomputed_route.size() > 0:
 		# Use precomputed route - skip WebSocket request
 		print("✅ [%s] Using precomputed route (%d waypoints) - skipping WebSocket request" % [drone_id, precomputed_route.size()])
+		
+		# Store simulation time as first waypoint time (this is when the route starts)
+		first_waypoint_time = SimulationEngine.current_simulation_time  # float: Simulation time when route starts (seconds)
 		
 		# Process the precomputed route (convert from Python format to Godot format)
 		_process_server_route(precomputed_route)
@@ -150,6 +155,9 @@ func initialize(id: String, start: Vector3, end: Vector3, drone_model: String, s
 		# Hybrid timing: Record both simulation time and system clock time when route request is sent (BEFORE creating message)
 		route_request_sent_time = SimulationEngine.current_simulation_time  # float: Simulation time in seconds (for simulation logic)
 		route_request_sent_system_clock_time = Time.get_unix_time_from_system()  # float: System clock time in seconds since Unix epoch (matches Python time.time())
+		
+		# Store simulation time as first waypoint time (this is the start_time used by Python for calculating overfly times)
+		first_waypoint_time = SimulationEngine.current_simulation_time  # float: Simulation time when first waypoint should be reached (seconds)
 		
 		# Include send timestamp in message for network latency calculation on Python side
 		message_data["client_request_sent_time"] = route_request_sent_system_clock_time  # float: System clock time when Godot sent the request (for network latency calculation)
@@ -610,10 +618,18 @@ func _on_route_response_received(data):
 	var parse_result = json.parse(response_text)
 	
 	if parse_result != OK:
-		push_warning("Failed to parse JSON response for drone %s" % drone_id)
-		# Fall back to default route
-		_create_default_route(origin_position, destination_position)
-		_finalize_route_setup()
+		# Failed to parse JSON response - cancel flight
+		print("❌ [%s] ROUTE REQUEST FAILED - Invalid JSON response from server" % drone_id)
+		print("   │ Reason: Failed to parse JSON response")
+		print("   │ Flight cancelled - drone will not fly")
+		# Stop the timeout timer
+		if route_response_timer and not route_response_timer.is_stopped():
+			route_response_timer.stop()
+		# Disconnect from signal
+		if WebSocketManager.data_received.is_connected(_on_route_response_received):
+			WebSocketManager.data_received.disconnect(_on_route_response_received)
+		waiting_for_route_response = false
+		completed = true  # Mark drone as completed (cancelled)
 		return
 	
 	var response_data = json.data
@@ -654,27 +670,49 @@ func _on_route_response_received(data):
 		if WebSocketManager.data_received.is_connected(_on_route_response_received):
 			WebSocketManager.data_received.disconnect(_on_route_response_received)
 		
-		# Check if pathfinding timed out on the server (status: "timeout")
-		if response_data.has("status") and response_data.status == "timeout":
-			# Pathfinding failed - no route found within 3 seconds
-			var timeout_message = response_data.get("message", "No route found within timeout period")  # String: Error message from server
-			print("❌ [%s] PATHFINDING FAILED - No route found within 3 seconds" % drone_id)
-			print("   │ Server message: %s" % timeout_message)
-			print("   │ Flight cancelled - drone will not fly")
-			waiting_for_route_response = false  # bool: Reset waiting flag
-			completed = true  # bool: Mark drone as completed (cancelled) so it won't fly
-			return  # Exit early - don't process route or finalize setup
+		# Check for failure statuses - cancel flight for any failure
+		if response_data.has("status"):
+			var status = response_data.status  # String: Response status
+			var status_message = response_data.get("message", "Unknown error")  # String: Error message from server
+			
+			if status == "timeout":
+				# Pathfinding timed out - no route found within 3 seconds
+				print("❌ [%s] PATHFINDING FAILED - No route found within 3 seconds" % drone_id)
+				print("   │ Server message: %s" % status_message)
+				print("   │ Flight cancelled - drone will not fly")
+				waiting_for_route_response = false
+				completed = true  # Mark drone as completed (cancelled)
+				return
+			elif status == "no_path":
+				# No conflict-free path found
+				print("❌ [%s] PATHFINDING FAILED - No conflict-free path found" % drone_id)
+				print("   │ Server message: %s" % status_message)
+				print("   │ Flight cancelled - drone will not fly")
+				waiting_for_route_response = false
+				completed = true  # Mark drone as completed (cancelled)
+				return
+			elif status == "error":
+				# Pathfinding error occurred
+				print("❌ [%s] PATHFINDING FAILED - Error during pathfinding" % drone_id)
+				print("   │ Server message: %s" % status_message)
+				print("   │ Flight cancelled - drone will not fly")
+				waiting_for_route_response = false
+				completed = true  # Mark drone as completed (cancelled)
+				return
 		
 		# Check if a valid route was provided
 		if response_data.has("route") and response_data.route is Array:
 			# Use server-provided route
 			_process_server_route(response_data.route)
+			_finalize_route_setup()
 		else:
-			# No route provided and not a timeout - fall back to default route
-			push_warning("No valid route in response, using default route for drone %s" % drone_id)
-			_create_default_route(origin_position, destination_position)
-		
-		_finalize_route_setup()
+			# No route provided and status is not a recognized failure - cancel flight
+			var status_message = response_data.get("message", "No route provided in response")
+			print("❌ [%s] ROUTE REQUEST FAILED - No valid route in response" % drone_id)
+			print("   │ Reason: %s" % status_message)
+			print("   │ Flight cancelled - drone will not fly")
+			waiting_for_route_response = false
+			completed = true  # Mark drone as completed (cancelled)
 
 func _latlon_to_position(lat: float, lon: float, altitude: float) -> Vector3:
 	"""
@@ -775,7 +813,7 @@ func _finalize_route_setup():
 func _on_route_response_timeout():
 	"""
 	Handle timeout when no response is received from server
-	Controlled by CANCEL_ON_TIMEOUT constant - can cancel flight or use default route
+	Always cancels flight - no default route fallback
 	"""
 	# Hybrid timing: Record both simulation time and system clock time when timeout occurs
 	var timeout_time = SimulationEngine.current_simulation_time  # float: Simulation time when timeout occurred (seconds)
@@ -791,14 +829,9 @@ func _on_route_response_timeout():
 	if WebSocketManager.data_received.is_connected(_on_route_response_received):
 		WebSocketManager.data_received.disconnect(_on_route_response_received)
 	
-	# Check timeout behavior: cancel flight or use default route
-	if CANCEL_ON_TIMEOUT:
-		# Cancel the flight - mark as completed without route
-		print("❌ [%s] FLIGHT CANCELLED - No route received within timeout period" % drone_id)
-		waiting_for_route_response = false
-		completed = true  # Mark drone as completed (cancelled)
-	else:
-		# Use default route as fallback
-		push_warning("Timeout waiting for route response for drone %s, using default route" % drone_id)
-		_create_default_route(origin_position, destination_position)
-		_finalize_route_setup()
+	# Cancel the flight - no route received within timeout period
+	print("❌ [%s] FLIGHT CANCELLED - No route received within timeout period" % drone_id)
+	print("   │ Reason: Timeout waiting for route response from server")
+	print("   │ Flight cancelled - drone will not fly")
+	waiting_for_route_response = false
+	completed = true  # Mark drone as completed (cancelled)

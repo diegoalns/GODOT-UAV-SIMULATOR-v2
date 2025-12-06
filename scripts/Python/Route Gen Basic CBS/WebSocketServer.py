@@ -153,6 +153,15 @@ async def websocket_handler(websocket):
     Args:
         websocket: WebSocket connection object from websockets library
     """
+    # Log when client connects
+    client_address = websocket.remote_address if hasattr(websocket, 'remote_address') else "unknown"
+    print("\n" + "="*80, flush=True)
+    print("│ ✅ WEBSOCKET CLIENT CONNECTED", flush=True)
+    print("="*80, flush=True)
+    print(f"│ Client Address: {client_address}", flush=True)
+    print(f"│ Status: Connection established - ready to receive route requests", flush=True)
+    print("="*80 + "\n", flush=True)
+    
     try:
         async for message in websocket:
             

@@ -11,6 +11,7 @@ The Godot UAV Simulator is designed to simulate multiple autonomous drones opera
 - **Multi-Drone Simulation**: Supports concurrent operation of multiple drones with different models and capabilities
 - **Conflict-Based Pathfinding**: Python server uses CBS algorithm to plan collision-free routes
 - **Real-Time Visualization**: 3D terrain rendering with interactive camera controls
+- **Active Drones Display**: Left-side GUI panel showing active drones with their first waypoint times (simulation time)
 - **Collision Detection**: Automatic detection and logging of drone proximity events
 - **Pre-Request Route System**: Routes are requested 10 minutes before ETD for efficient planning
 - **Multiple Drone Models**: Three distinct drone types with varying performance characteristics
@@ -99,6 +100,7 @@ The server will start on `ws://localhost:8765` and wait for connections from God
 - **Speed Multiplier**: Adjust simulation speed (1x, 2x, 5x, 10x)
 - **Headless Mode**: Disable visualization for faster performance
 - **Drone Port Selection**: Select different drone ports to view their locations
+- **Active Drones Panel**: Left side of screen displays all active (flying) drones with their first waypoint times (simulation time)
 
 ## Drone Models
 
@@ -312,7 +314,7 @@ Nodes use format: `L{level}_X{x}_Y{y}` (e.g., `L0_X0_Y0`)
 
 ---
 
-**Last Updated**: Based on codebase analysis as of project state
+**Last Updated**: 2025-01-27 - Added Active Drones Display feature
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.8+
 

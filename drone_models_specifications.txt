@@ -121,7 +121,7 @@ Collision Response:              Detection and logging (no avoidance)
 NAVIGATION SYSTEMS:
 -------------------
 Route Planning:                  WebSocket-based with server communication
-Fallback System:                 Automatic default route generation
+Fallback System:                 None - flights cancelled if no route received
 Movement Type:                   Holonomic (direct waypoint following)
 
 FLIGHT PHASES:
@@ -142,8 +142,10 @@ BATTERY MANAGEMENT:
 WAYPOINT SYSTEM:
 ----------------
 - Server-requested routes via WebSocket
-- 10-second timeout with fallback to default route
-- Intermediate waypoints for flights > 5km (one per 10km)
+- 90-second timeout - flight cancelled if no route received
+- Drones only fly if Python server provides valid route (status: "success")
+- All failure cases (timeout, no_path, error, invalid JSON) cancel flight
+- Intermediate waypoints for flights > 5km (one per 10km) - only in server-provided routes
 - Altitude management for different flight phases
 
 ================================================================================

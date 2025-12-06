@@ -20,6 +20,10 @@ var route_storage: Dictionary = {}
 # Key: plan_id (String), Value: Dictionary with request info
 var pending_route_requests: Dictionary = {}
 
+# Statistics tracking for failed pre-requests
+var failed_pre_requests_count: int = 0  # Total count of failed pre-requests
+var failed_pre_requests_by_status: Dictionary = {}  # Dictionary tracking failures by status type
+
 # Route request timeout duration in seconds (float)
 const ROUTE_REQUEST_TIMEOUT: float = 5.0  # 5 second timeout for pre-requests
 
@@ -260,6 +264,36 @@ func handle_route_response(response_data: Dictionary):
 		
 	else:
 		# FAILURE: Timeout or error - don't store in heap
+		# Log the failure with details
+		# Use existing status variable (already declared above) or default to "unknown"
+		if status == "":
+			status = "unknown"
+		var status_message = response_data.get("message", "Unknown error")
+		var etd = request_info.get("etd", 0.0)
+		
+		# Update failure statistics
+		failed_pre_requests_count += 1
+		if not failed_pre_requests_by_status.has(status):
+			failed_pre_requests_by_status[status] = 0
+		failed_pre_requests_by_status[status] += 1
+		
+		if status == "no_path":
+			print("[PRE-REQUEST FAILED] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
+			print("   | Server message: %s" % status_message)
+			print("   | Flight plan will be skipped - no drone will be created")
+		elif status == "timeout":
+			print("[PRE-REQUEST TIMEOUT] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
+			print("   | Server message: %s" % status_message)
+			print("   | Flight plan will be skipped - no drone will be created")
+		elif status == "error":
+			print("[PRE-REQUEST ERROR] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
+			print("   | Server message: %s" % status_message)
+			print("   | Flight plan will be skipped - no drone will be created")
+		else:
+			print("[PRE-REQUEST FAILED] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
+			print("   | Server message: %s" % status_message)
+			print("   | Flight plan will be skipped - no drone will be created")
+		
 		# Remove from pending (FP is gone, not stored anywhere)
 		pending_route_requests.erase(plan_id)
 
@@ -289,6 +323,19 @@ func check_timeouts(current_simulation_time: float):
 	# Handle timed-out requests
 	for plan_id in timed_out_plans:
 		var request_info = pending_route_requests[plan_id]  # Dictionary: Request tracking info
+		var etd = request_info.get("etd", 0.0)  # float: Estimated Time of Departure
+		
+		# Update failure statistics
+		failed_pre_requests_count += 1
+		if not failed_pre_requests_by_status.has("timeout"):
+			failed_pre_requests_by_status["timeout"] = 0
+		failed_pre_requests_by_status["timeout"] += 1
+		
+		# Log timeout
+		print("[PRE-REQUEST TIMEOUT] Plan: %s | Status: timeout | ETD: %.1f s" % [plan_id, etd])
+		print("   | No response received within %d seconds" % ROUTE_REQUEST_TIMEOUT)
+		print("   | Flight plan will be skipped - no drone will be created")
+		
 		# Remove from pending (FP is gone)
 		pending_route_requests.erase(plan_id)
 
@@ -506,6 +553,27 @@ func has_route(plan_id: String) -> bool:
 	# Use dictionary lookup for O(1) performance (much faster than linear search)
 	return route_storage.has(plan_id)  # bool: True if route exists, False otherwise
 
+func print_failed_pre_requests_summary():
+	"""
+	Print a summary of failed pre-requests.
+	Useful for debugging and monitoring route generation failures.
+	"""
+	if failed_pre_requests_count == 0:
+		return  # No failures to report
+	
+	print("\n" + "=".repeat(80))
+	print("| PRE-REQUEST FAILURES SUMMARY")
+	print("=".repeat(80))
+	print("| Total Failed Pre-Requests: %d" % failed_pre_requests_count)
+	
+	if failed_pre_requests_by_status.size() > 0:
+		print("| Failures by Status:")
+		for status in failed_pre_requests_by_status.keys():
+			var count = failed_pre_requests_by_status[status]
+			print("|   - %s: %d" % [status, count])
+	
+	print("=".repeat(80) + "\n")
+
 func cleanup_stale_routes(current_simulation_time: float, max_age_seconds: float = 300.0):
 	"""
 	Remove routes from heap and storage that have ETD far in the past.
@@ -567,6 +635,8 @@ func get_heap_stats() -> Dictionary:
 			- storage_size: int - Number of routes in storage
 			- heap_memory_estimate: int - Estimated heap memory in bytes (~50 bytes per entry)
 			- storage_memory_estimate: int - Estimated storage memory in bytes (approximate)
+			- failed_pre_requests_count: int - Total number of failed pre-requests
+			- failed_pre_requests_by_status: Dictionary - Failures grouped by status type
 	"""
 	var heap_size = successful_routes_heap.size()  # int: Current heap size
 	var storage_size = route_storage.size()  # int: Current storage size
@@ -580,5 +650,7 @@ func get_heap_stats() -> Dictionary:
 		"storage_size": storage_size,  # int: Number of routes in storage
 		"heap_memory_estimate": heap_memory_estimate,  # int: Estimated heap memory in bytes
 		"storage_memory_estimate": storage_memory_estimate,  # int: Estimated storage memory in bytes
-		"max_heap_size": MAX_HEAP_SIZE  # int: Maximum allowed heap size
+		"max_heap_size": MAX_HEAP_SIZE,  # int: Maximum allowed heap size
+		"failed_pre_requests_count": failed_pre_requests_count,  # int: Total failed pre-requests
+		"failed_pre_requests_by_status": failed_pre_requests_by_status.duplicate()  # Dictionary: Failures by status
 	}

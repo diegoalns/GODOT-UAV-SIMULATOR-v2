@@ -11,7 +11,7 @@ var total_plans_processed: int = 0
 
 # Configuration: CSV file path for flight plans data
 # Change this constant to load a different flight plan file
-const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Fixed.csv"
+const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv"
 
 const ORIGIN_LAT = 40.55417343
 const ORIGIN_LON = -73.99583928

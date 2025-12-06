@@ -28,13 +28,17 @@ func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, 
 		push_warning("Attempting to create duplicate drone with ID %s. Cleaning up existing drone first." % id)
 		
 		# Properly remove the existing drone to prevent multiple instances
-		var existing_drone = drones[id]
-		existing_drone.queue_free()  # Remove from scene tree - Area3D will be destroyed
-		drones.erase(id)  # Remove from dictionary to clear reference
+		var existing_drone = drones[id]  # Drone object to remove (Drone)
 		
-		# Remove from visualization system if it exists to prevent visual artifacts
+		# Remove from visualization system first to clean up visual nodes and labels
 		if visualization_system:
-			visualization_system.remove_drone(existing_drone)
+			visualization_system.remove_drone(existing_drone)  # Remove visual representation and label
+		
+		# Free the drone node from scene tree (Area3D will be destroyed)
+		existing_drone.queue_free()  # Remove from scene tree - Area3D will be destroyed
+		
+		# Remove from dictionary to clear reference
+		drones.erase(id)  # Remove from dictionary to clear reference (dict entry: str -> Drone)
 	
 	# Create new drone instance as Area3D node
 	var drone = Drone.new()
@@ -64,14 +68,30 @@ func update_all(delta: float):
 			visualization_system.update_drone_position(drone)
 
 func remove_completed_drones():
-	var to_remove = []
+	"""
+	Remove all completed drones from the simulation.
+	Properly cleans up both the drone object and its visualization.
+	"""
+	var to_remove = []  # List of drone IDs to remove (list of str)
+	
+	# First pass: identify all completed drones
 	for id in drones.keys():
 		if drones[id].completed:
-			to_remove.append(id)
+			to_remove.append(id)  # Mark drone for removal (str)
+	
+	# Second pass: remove each completed drone properly
 	for id in to_remove:
-		var drone = drones[id]
-		drone.queue_free()  # Remove from scene
-		drones.erase(id)    # Remove from dictionary
+		var drone = drones[id]  # Drone object to remove (Drone)
+		
+		# Remove from visualization system first to clean up visual nodes and labels
+		if visualization_system:
+			visualization_system.remove_drone(drone)  # Remove visual representation and label
+		
+		# Free the drone node from scene tree (Area3D will be destroyed)
+		drone.queue_free()  # Remove from scene tree
+		
+		# Remove from dictionary to clear reference
+		drones.erase(id)  # Remove drone ID from dictionary (dict entry: str -> Drone)
 
 # Note: get_all_drones() function removed - no longer needed with Area3D collision system
 # Collision detection now happens automatically through Godot's physics engine

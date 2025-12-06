@@ -29,6 +29,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 │  │         VisualizationSystem (3D Rendering)              │  │
 │  │  - Terrain GridMap                                      │  │
 │  │  - Drone Meshes                                         │  │
+│  │  - Drone Labels (3D Text)                               │  │
 │  │  - Camera Controls                                      │  │
 │  └─────────────────────────────────────────────────────────┘  │
 └───────────────────────────┬───────────────────────────────────┘
@@ -91,9 +92,13 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - `FlightPlanManager` - Flight plan loading
 - `RoutePreRequestManager` - Route pre-request system
 - `VisualizationSystem` - 3D rendering
-- `SimpleUI` - User interface
+- `SimpleUI` - User interface (includes ActiveDronesPanel)
 - `SimpleLogger` - CSV logging
 - `DebugLogger` - Advanced logging (if autoload configured)
+
+**UI Integration**:
+- Connects ActiveDronesPanel to DroneManager via `ui.set_drone_manager(drone_manager)`
+- ActiveDronesPanel displays active drones with first waypoint times on left side of screen
 
 #### 2. DroneManager (`scripts/core/drone_manager.gd`)
 
@@ -102,16 +107,17 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 **Responsibilities**:
 - Creates drone instances from flight plans
 - Updates all drones each frame
-- Removes completed drones from memory
+- Removes completed drones from memory (including visualization cleanup)
 - Coordinates with visualization system
 
 **Key Data Structures**:
 - `drones: Dictionary` - Active drones keyed by ID (String → Drone)
+- `visualization_system: VisualizationSystem` - Reference to visualization system for cleanup
 
 **Key Functions**:
 - `create_test_drone()` - Creates and initializes a drone
 - `update_all()` - Updates all drones with delta time
-- `remove_completed_drones()` - Cleanup completed drones
+- `remove_completed_drones()` - Removes completed drones and cleans up their visual representations (meshes and labels)
 
 #### 3. FlightPlanManager (`scripts/core/flight_plan_manager.gd`)
 
@@ -205,6 +211,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 **Responsibilities**:
 - Renders terrain using GridMap
 - Displays drone meshes (LRVTOL_UAV.glb model)
+- Displays 3D labels above drones showing ID, model, speed, and status
 - Manages camera (balloon-style free camera)
 - Handles user input for camera movement
 - Manages lighting and environment
@@ -212,20 +219,29 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 **Key Components**:
 - `terrain_gridmap: GridMap` - Terrain visualization
 - `gridmap_manager: GridMapManager` - Terrain data management
-- `drone_meshes: Dictionary` - Visual drone representations
+- `drone_meshes: Dictionary` - Visual drone representations (String → Node3D)
+- `drone_labels: Dictionary` - 3D text labels above drones (String → Label3D)
 - `balloon_ref: CharacterBody3D` - Camera controller
 
+**Label System**:
+- `show_drone_labels: bool` - Enable/disable label display (default: true)
+- `label_offset_height: float` - Vertical offset above drone in meters (default: 200.0)
+- `label_font_size: int` - Font size in pixels (default: 24)
+- `label_billboard_mode: Label3D.BillboardMode` - Billboard mode for camera-facing labels
+- Labels display: drone ID, model type, current speed (if moving), and status (waiting/completed)
+- Labels automatically update position and text as drones move
+
 **Key Functions**:
-- `add_drone()` - Adds visual representation for drone
-- `update_drone_position()` - Updates drone mesh position
-- `remove_drone()` - Removes drone visualization
+- `add_drone()` - Adds visual representation and label for drone
+- `update_drone_position()` - Updates drone mesh position and label text
+- `remove_drone()` - Removes drone visualization and label
 - `setup_terrain()` - Initializes terrain GridMap
 
 **Camera Controls**:
 - WASD: Move camera
 - Mouse: Rotate camera
 - Mouse wheel: Adjust speed
-- Space: Toggle mouse capture
+- Escape: Toggle mouse capture
 
 #### 7. GridMapManager (`scripts/core/gridmap_manager.gd`)
 
@@ -323,6 +339,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - Headless mode toggle
 - Drone port selector
 - Time display (simulation time and real runtime)
+- Active drones panel integration
 
 **Key Signals**:
 - `start_requested` - Emitted when start button pressed
@@ -331,11 +348,45 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - `headless_mode_changed(enable)` - Emitted when headless toggle changes
 - `port_selected(port_id)` - Emitted when port selector changes
 
+**Key Components**:
+- `active_drones_panel: ActiveDronesPanel` - Panel displaying active drones with first waypoint times
+
 **Key Functions**:
-- `setup_ui()` - Creates UI elements
+- `setup_ui()` - Creates UI elements and active drones panel
 - `set_drone_ports()` - Populates port selector dropdown
+- `set_drone_manager()` - Connects active drones panel to DroneManager
 - `update_time()` - Updates time display label
 - `update_status()` - Updates status label text
+
+#### 10a. ActiveDronesPanel (`scripts/ui/active_drones_panel.gd`)
+
+**Purpose**: Displays active (flying) drones with their first waypoint times
+
+**Responsibilities**:
+- Shows list of active drones on left side of screen
+- Displays drone ID and first waypoint time (simulation time)
+- Updates in real-time as drones become active or complete
+- Sorts drones by first waypoint time (earliest first)
+
+**Key Variables**:
+- `drone_manager: DroneManager` - Reference to DroneManager for accessing drone data
+- `panel_width: int` - Width of panel in pixels (default: 250)
+- `title_font_size: int` - Font size for title label (default: 18)
+- `drone_entry_font_size: int` - Font size for drone entries (default: 14)
+
+**Key Functions**:
+- `setup_panel()` - Creates and configures panel UI elements
+- `set_drone_manager()` - Sets DroneManager reference
+- `update_drone_list()` - Updates displayed list of active drones
+- `create_drone_entry()` - Creates UI entry for a single drone
+
+**Display Criteria**:
+- Drone must not be completed (`completed = false`)
+- Drone must not be waiting for route response (`waiting_for_route_response = false`)
+- Drone must have valid first waypoint time (`first_waypoint_time >= 0.0`)
+
+**Update Frequency**:
+- Updates every frame via `_process()` to reflect current active drones
 
 #### 11. Drone (`scripts/drone/drone.gd`)
 
@@ -355,6 +406,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - `route: Array` - Array of waypoint dictionaries
 - `current_waypoint_index: int` - Current waypoint index
 - `waiting_for_route_response: bool` - Route request pending flag
+- `first_waypoint_time: float` - Simulation time when first waypoint should be reached (seconds, -1.0 if not set)
 - `is_colliding: bool` - Collision state
 - `collision_partners: Array` - IDs of colliding drones
 
@@ -532,8 +584,7 @@ Drone.initialize() (no precomputed route)
         │   └─> Starts movement
         │
         └─> Timeout (90 seconds)
-            ├─> CANCEL_ON_TIMEOUT = true → Cancel flight
-            └─> CANCEL_ON_TIMEOUT = false → Use default route
+            └─> Cancel flight (no default route fallback)
 ```
 
 ## Coordinate Systems
@@ -600,8 +651,12 @@ Both simulation time and system clock time are tracked for:
 ### Drone Instances (Godot)
 
 - **Storage**: Dictionary in DroneManager
-- **Cleanup**: Removed when `completed = true`
+- **Cleanup**: Removed when `completed = true` (includes visualization cleanup: meshes and labels)
 - **Cleanup Trigger**: `remove_completed_drones()` called each frame
+- **Cleanup Order**: 
+  1. Remove from visualization system (meshes and labels)
+  2. Free drone node from scene tree
+  3. Remove from dictionary
 
 ## Performance Characteristics
 
@@ -628,7 +683,7 @@ Both simulation time and system clock time are tracked for:
 
 - **Timeout**: 90 seconds (simulation time)
 - **Purpose**: Prevents drones waiting indefinitely for routes
-- **Behavior**: Controlled by `CANCEL_ON_TIMEOUT` constant
+- **Behavior**: Always cancels flight (no default route fallback)
 
 ## Error Handling
 
@@ -646,9 +701,14 @@ Both simulation time and system clock time are tracked for:
 
 ### Route Response Handling
 
-- **Invalid JSON**: Falls back to default route
-- **Missing Route Data**: Falls back to default route
+- **Invalid JSON**: Flight cancelled with debug message
+- **Missing Route Data**: Flight cancelled with debug message
+- **No Path Found** (`status: "no_path"`): Flight cancelled with debug message
+- **Pathfinding Error** (`status: "error"`): Flight cancelled with debug message
+- **Pathfinding Timeout** (`status: "timeout"`): Flight cancelled with debug message
+- **Client Timeout** (90s): Flight cancelled with debug message
 - **Wrong Drone ID**: Ignored (signal disconnection prevents processing)
+- **Note**: Drones only fly if they receive a valid route from Python server (`status: "success"` with route array)
 
 ## Extension Points
 
@@ -709,6 +769,6 @@ Both simulation time and system clock time are tracked for:
 
 ---
 
-**Last Updated**: Based on comprehensive codebase review
-**Documentation Version**: 1.1
+**Last Updated**: 2025-01-27 - Added ActiveDronesPanel component and first_waypoint_time tracking
+**Documentation Version**: 1.2
 

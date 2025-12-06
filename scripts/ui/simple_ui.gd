@@ -13,6 +13,7 @@ signal port_selected(port_id: String)
 @onready var headless_checkbox = CheckBox.new()
 @onready var port_selector = OptionButton.new()
 @onready var time_label = Label.new()
+@onready var active_drones_panel: ActiveDronesPanel = null  # Panel for displaying active drones (ActiveDronesPanel)
 
 var is_running = false
 var headless_mode: bool = false
@@ -29,11 +30,15 @@ func _ready():
 	self.offset_bottom = 0
 
 func setup_ui():
-	# Layout
+	# Create Active Drones Panel on the left side
+	active_drones_panel = ActiveDronesPanel.new()
+	add_child(active_drones_panel)  # Add panel to UI
+	
+	# Layout for control buttons (original position - top left)
 	var vbox = VBoxContainer.new()
 	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_child(vbox)
+	add_child(vbox)  # Add control container to UI
 	
 	# Headless mode toggle
 	headless_checkbox.text = "Headless Mode"
@@ -64,7 +69,7 @@ func setup_ui():
 	status_label.text = "Ready"
 	vbox.add_child(status_label)
 	
-	# Time label (top right)
+	# Time label (top right) - original position
 	time_label.text = "Sim: 0.00s | Real: 0.00s"
 	time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	time_label.anchor_left = 0
@@ -105,3 +110,13 @@ func _on_port_selected(index: int):
 
 func update_time(sim_time: float, real_time: float):
 	time_label.text = "Sim: %.2fs | Real: %.2fs" % [sim_time, real_time]
+
+func set_drone_manager(manager: DroneManager):
+	"""
+	Set the DroneManager reference for the active drones panel
+	
+	Args:
+		manager: DroneManager - Reference to the DroneManager instance
+	"""
+	if active_drones_panel != null:
+		active_drones_panel.set_drone_manager(manager)  # Pass DroneManager to panel (void)
