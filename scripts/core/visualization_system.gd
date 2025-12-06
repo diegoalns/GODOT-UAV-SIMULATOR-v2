@@ -3,6 +3,8 @@ extends Node3D
 
 var drone_meshes: Dictionary = {}  # Dictionary mapping drone_id (str) to visual Node3D nodes
 var drone_labels: Dictionary = {}  # Dictionary mapping drone_id (str) to Label3D nodes for displaying drone information
+var route_lines: Dictionary = {}  # Dictionary mapping drone_id (str) to MeshInstance3D nodes for route visualization
+var route_colors: Dictionary = {}  # Dictionary mapping drone_id (str) to Color for route line color
 var enabled: bool = true
 var balloon_ref: CharacterBody3D = null  # Reference to the balloon
 
@@ -44,6 +46,10 @@ var label_offset_height: float = 50.0  # float: Vertical offset in meters above 
 var label_font_size: int = 32  # int: Font size for drone labels in pixels (size: 1 int, increased from 24 for better readability)
 var label_pixel_size: float = 1  # float: Pixel size for 3D text scaling - controls label size in 3D space (size: 1 float, increased from 0.001 for better visibility)
 var label_billboard_mode: BaseMaterial3D.BillboardMode = BaseMaterial3D.BILLBOARD_ENABLED  # BaseMaterial3D.BillboardMode: Billboard mode - labels always face camera (enum)
+
+# Route line configuration
+var route_line_width: float = 5.0  # float: Width of route lines in meters (size: 1 float)
+var route_line_opacity: float = 0.7  # float: Opacity of route lines (0.0-1.0) (size: 1 float)
 
 func set_enabled(enable: bool):
 	enabled = enable
@@ -506,6 +512,16 @@ func remove_drone(drone: Drone):
 	if drone_labels.has(drone.drone_id):
 		drone_labels.erase(drone.drone_id)  # Remove label reference from dictionary (dict entry: str -> Label3D)
 	
+	# Remove route line if it exists
+	if route_lines.has(drone.drone_id):
+		var route_line = route_lines[drone.drone_id]
+		route_line.queue_free()  # Remove route line mesh from scene tree
+		route_lines.erase(drone.drone_id)  # Remove route line reference from dictionary (dict entry: str -> MeshInstance3D)
+	
+	# Remove route color reference
+	if route_colors.has(drone.drone_id):
+		route_colors.erase(drone.drone_id)  # Remove color reference from dictionary (dict entry: str -> Color)
+	
 	if had_visualization:
 		print("Removed visualization for drone %s" % drone.drone_id)
 
@@ -586,6 +602,9 @@ func update_drone_position(drone: Drone):
 					var dir_norm: Vector3 = dir_to_target.normalized()
 					if forward_world.dot(dir_norm) < 0.0:
 						node.rotate_y(PI)
+		
+		# Update route line visibility - show when drone is flying, hide when completed
+		_update_route_line(drone)
 
 func add_drone_port(dp_position: Vector3, port_id: String):
 	var mesh_instance = MeshInstance3D.new()
@@ -631,3 +650,188 @@ func is_terrain_ready() -> bool:
 	@return bool - True if terrain is ready, false otherwise
 	"""
 	return terrain_gridmap != null and gridmap_manager != null
+
+func _generate_drone_color(drone_id: String) -> Color:
+	"""
+	Generate a deterministic random color for a drone based on its ID
+	Ensures same drone always gets same color, but different drones get different colors
+	
+	Args:
+		drone_id: String - Unique drone identifier
+	
+	Returns:
+		Color - Random color for this drone (deterministic based on ID)
+	"""
+	# Use hash of drone_id to generate deterministic random values
+	var hash_value = drone_id.hash()  # int: Hash value of drone ID
+	var rng = RandomNumberGenerator.new()
+	rng.seed = hash_value  # Set seed based on hash for deterministic randomness
+	
+	# Generate bright, saturated colors for better visibility
+	var hue = rng.randf()  # Random hue (0.0-1.0)
+	var saturation = 0.7 + rng.randf() * 0.3  # Saturation between 0.7-1.0 for vibrant colors
+	var brightness = 0.8 + rng.randf() * 0.2  # Brightness between 0.8-1.0 for visibility
+	
+	# Convert HSV to RGB
+	var color = Color.from_hsv(hue, saturation, brightness, route_line_opacity)
+	return color
+
+func _create_route_line_mesh(waypoints: Array, color: Color) -> MeshInstance3D:
+	"""
+	Create an efficient route line mesh connecting waypoints using ArrayMesh
+	Creates a tube-like mesh using quads for better visibility and performance
+	
+	Args:
+		waypoints: Array - Array of waypoint dictionaries with "position" Vector3 fields
+		color: Color - Color for the route line
+	
+	Returns:
+		MeshInstance3D - Mesh instance containing the route line
+	"""
+	if waypoints.size() < 2:
+		return null  # Need at least 2 waypoints to draw a line
+	
+	# Create mesh instance
+	var mesh_instance = MeshInstance3D.new()
+	var array_mesh = ArrayMesh.new()
+	
+	# Prepare arrays for mesh data
+	var vertices = PackedVector3Array()
+	var normals = PackedVector3Array()
+	var uvs = PackedVector2Array()
+	var indices = PackedInt32Array()
+	
+	# Extract waypoint positions
+	var positions = []
+	for waypoint in waypoints:
+		if waypoint is Dictionary and waypoint.has("position"):
+			var pos = waypoint.position as Vector3
+			positions.append(pos * visual_scale)
+	
+	if positions.size() < 2:
+		return null
+	
+	# Create tube segments between waypoints
+	var half_width = route_line_width * visual_scale * 0.5
+	
+	for i in range(positions.size() - 1):
+		var start_pos = positions[i]
+		var end_pos = positions[i + 1]
+		var direction = (end_pos - start_pos)
+		var segment_length = direction.length()
+		
+		if segment_length < 0.001:
+			continue  # Skip zero-length segments
+		
+		direction = direction.normalized()
+		
+		# Calculate perpendicular vectors for tube cross-section
+		# Use a robust method to find perpendicular vectors
+		var up = Vector3.UP
+		var right = direction.cross(up)
+		
+		# If direction is parallel to UP, use FORWARD instead
+		if right.length() < 0.001:
+			up = Vector3.FORWARD
+			right = direction.cross(up)
+		
+		right = right.normalized()
+		var perp_up = right.cross(direction).normalized()
+		
+		# Create quad vertices for this segment (4 vertices per quad)
+		# Create a flat ribbon perpendicular to the direction
+		var v0 = start_pos - right * half_width
+		var v1 = start_pos + right * half_width
+		var v2 = end_pos + right * half_width
+		var v3 = end_pos - right * half_width
+		
+		# Add vertices
+		var base_idx = vertices.size()
+		vertices.append(v0)
+		vertices.append(v1)
+		vertices.append(v2)
+		vertices.append(v3)
+		
+		# Add normals (pointing outward)
+		var normal = perp_up
+		normals.append(normal)
+		normals.append(normal)
+		normals.append(normal)
+		normals.append(normal)
+		
+		# Add UVs
+		uvs.append(Vector2(0, 0))
+		uvs.append(Vector2(1, 0))
+		uvs.append(Vector2(1, 1))
+		uvs.append(Vector2(0, 1))
+		
+		# Add indices for quad (two triangles)
+		indices.append(base_idx + 0)
+		indices.append(base_idx + 1)
+		indices.append(base_idx + 2)
+		indices.append(base_idx + 0)
+		indices.append(base_idx + 2)
+		indices.append(base_idx + 3)
+	
+	# Create surface from arrays
+	var arrays = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	
+	# Add surface to mesh
+	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh_instance.mesh = array_mesh
+	
+	# Create material for the route line
+	var material = StandardMaterial3D.new()
+	material.albedo_color = color
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # Unshaded for better performance
+	material.flags_unshaded = true
+	material.no_depth_test = false  # Enable depth testing for proper 3D rendering
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA  # Enable alpha transparency
+	material.albedo_color.a = route_line_opacity  # Set opacity
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED  # Disable culling so line is visible from all angles
+	
+	mesh_instance.material_override = material
+	
+	return mesh_instance
+
+func _update_route_line(drone: Drone):
+	"""
+	Update route line visibility based on drone state
+	Shows route line when drone is flying, hides when completed
+	
+	Args:
+		drone: Drone - The drone object to update route line for
+	"""
+	# Check if drone has a route and is ready to fly
+	var should_show_route = (
+		not drone.completed and 
+		not drone.waiting_for_route_response and 
+		drone.route.size() >= 2
+	)
+	
+	if should_show_route:
+		# Route should be visible - create if it doesn't exist
+		if not route_lines.has(drone.drone_id):
+			# Generate or retrieve color for this drone
+			if not route_colors.has(drone.drone_id):
+				route_colors[drone.drone_id] = _generate_drone_color(drone.drone_id)
+			
+			var route_color = route_colors[drone.drone_id]
+			
+			# Create route line mesh
+			var route_line = _create_route_line_mesh(drone.route, route_color)
+			if route_line:
+				route_line.name = "RouteLine_" + drone.drone_id
+				add_child(route_line)
+				route_lines[drone.drone_id] = route_line
+	else:
+		# Route should be hidden - remove if it exists
+		if route_lines.has(drone.drone_id):
+			var route_line = route_lines[drone.drone_id]
+			route_line.queue_free()
+			route_lines.erase(drone.drone_id)
