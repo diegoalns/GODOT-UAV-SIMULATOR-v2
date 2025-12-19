@@ -13,7 +13,7 @@ var terrain_gridmap: GridMap = null  # GridMap node for terrain visualization
 var gridmap_manager: GridMapManager = null  # Manager for terrain data and population
 
 # Movement and control variables
-var move_speed = 100000.0  # Speed for movement
+var move_speed = 10000.0  # Speed for movement
 var rotation_speed = 0.001  # Speed of rotation with mouse
 var mouse_sensitivity = 0.001
 var camera_offset = Vector3(0, 5, 0)  # Offset from balloon position - slightly above center for better view
@@ -50,6 +50,13 @@ var label_billboard_mode: BaseMaterial3D.BillboardMode = BaseMaterial3D.BILLBOAR
 # Route line configuration
 var route_line_width: float = 5.0  # float: Width of route lines in meters (size: 1 float)
 var route_line_opacity: float = 0.7  # float: Opacity of route lines (0.0-1.0) (size: 1 float)
+
+# Collision marker configuration
+var collision_markers: Array = []  # Array of collision marker dictionaries - persistent markers for collision locations
+var show_collision_markers: bool = true  # bool: Whether to display collision markers (default: true)
+var collision_marker_size: float = 10.0  # float: Size of collision markers in meters (size: 1 float)
+var collision_marker_color: Color = Color(1.0, 0.65, 0.0, 0.8)  # Color: Orange/yellow color for collision markers (Color with RGBA)
+var collision_marker_container: Node3D = null  # Node3D: Container node for all collision markers
 
 func set_enabled(enable: bool):
 	enabled = enable
@@ -101,6 +108,7 @@ func _ready():
 	setup_environment()   # Then create sky environment - it will sync with the light
 	setup_ground()
 	setup_terrain()
+	setup_collision_markers()
 	
 	# Set up input processing
 	set_process_input(true)
@@ -333,6 +341,16 @@ func setup_terrain():
 	else:
 		push_error("VisualizationSystem: Failed to load terrain data")
 
+func setup_collision_markers():
+	"""
+	Initialize the collision marker container for persistent collision visualization
+	Creates a Node3D container to hold all collision markers
+	"""
+	collision_marker_container = Node3D.new()
+	collision_marker_container.name = "CollisionMarkers"
+	add_child(collision_marker_container)
+	print("VisualizationSystem: Collision marker system initialized")
+
 func setup_balloon():
 	balloon_ref = CharacterBody3D.new()
 	add_child(balloon_ref)
@@ -382,7 +400,7 @@ func _input(event):
 			# Roll right
 			balloon_ref.rotate(balloon_ref.global_transform.basis.z, -0.05)
 
-func _process(delta):
+func _process(_delta):
 	pass
 
 func _physics_process(delta):
@@ -624,6 +642,104 @@ func move_balloon_to_port(port_position: Vector3):
 	# Optionally apply scale_factor if you use one
 	balloon_ref.global_position = port_position * visual_scale
 	# Optionally reset orientation or camera offset here
+
+func add_collision_marker(marker_position: Vector3, drone1_id: String, drone2_id: String, distance: float, simulation_time: float):
+	"""
+	Add a persistent collision marker at the specified position
+	Creates a visual marker that remains for the entire simulation
+	
+	Args:
+		marker_position: Vector3 - World position where collision occurred (midpoint between drones)
+		drone1_id: String - ID of first drone in collision
+		drone2_id: String - ID of second drone in collision
+		distance: float - Distance between drones when collision was detected
+		simulation_time: float - Simulation time when collision occurred
+	"""
+	if not enabled or not show_collision_markers:
+		return
+	
+	if not collision_marker_container:
+		push_warning("VisualizationSystem: Collision marker container not initialized")
+		return
+	
+	# Create marker mesh - use a sphere for visibility
+	var marker_mesh = MeshInstance3D.new()
+	var sphere_mesh = SphereMesh.new()
+	sphere_mesh.radius = collision_marker_size * 0.5 * visual_scale  # Half size for radius
+	sphere_mesh.height = collision_marker_size * visual_scale
+	marker_mesh.mesh = sphere_mesh
+	
+	# Create material with emissive property for visibility
+	var material = StandardMaterial3D.new()
+	material.albedo_color = collision_marker_color
+	material.emission_enabled = true
+	material.emission = collision_marker_color
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # Unshaded for consistent visibility
+	sphere_mesh.material = material
+	
+	# Position marker at collision location (scaled for visualization)
+	marker_mesh.position = marker_position * visual_scale
+	marker_mesh.name = "CollisionMarker_%s_%s_%.1f" % [drone1_id, drone2_id, simulation_time]
+	
+	# Add label showing collision info (optional)
+	if show_drone_labels:
+		var label = Label3D.new()
+		label.text = "Collision\n%s & %s\n%.1fm" % [drone1_id, drone2_id, distance]
+		label.font_size = 16
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.modulate = Color.WHITE
+		label.outline_modulate = Color.BLACK
+		label.outline_size = 16
+		label.pixel_size = 0.5
+		label.position = Vector3(0, collision_marker_size * visual_scale * 0.75, 0)
+		marker_mesh.add_child(label)
+	
+	# Add marker to container
+	collision_marker_container.add_child(marker_mesh)
+	
+	# Store marker metadata
+	var marker_data = {
+		"node": marker_mesh,
+		"position": marker_position,
+		"drone1_id": drone1_id,
+		"drone2_id": drone2_id,
+		"distance": distance,
+		"simulation_time": simulation_time
+	}
+	collision_markers.append(marker_data)
+	
+	print("VisualizationSystem: Added collision marker at %s for %s & %s (distance: %.2fm)" % [marker_position, drone1_id, drone2_id, distance])
+
+func clear_collision_markers():
+	"""
+	Remove all collision markers from the visualization
+	Clears both the visual nodes and the metadata array
+	"""
+	if collision_marker_container:
+		for child in collision_marker_container.get_children():
+			child.queue_free()
+	collision_markers.clear()
+	print("VisualizationSystem: Cleared all collision markers")
+
+func set_show_collision_markers(should_show: bool):
+	"""
+	Toggle visibility of collision markers
+	
+	Args:
+		should_show: bool - Whether to show collision markers
+	"""
+	show_collision_markers = should_show
+	if collision_marker_container:
+		collision_marker_container.visible = should_show
+
+func get_collision_marker_count() -> int:
+	"""
+	Get the current number of collision markers
+	
+	Returns:
+		int - Number of collision markers
+	"""
+	return collision_markers.size()
 
 func get_terrain_altitude_at_position(world_pos: Vector3) -> float:
 	"""

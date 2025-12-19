@@ -1,12 +1,12 @@
 res://logs/mean_distances.Mean.translation
 res://logs/collision_log.Event.translation
-res://logs/collision_log.Drone.translation
-res://logs/collision_log.Distance.translation
-res://logs/collision_log.Collision.translation
 res://logs/simple_log.DroneID.translation
+res://logs/collision_log.Drone.translation
 res://logs/simple_log.X.translation
 res://logs/simple_log.Y.translation
+res://logs/collision_log.Distance.translation
 res://logs/simple_log.Z.translation
+res://logs/collision_log.Collision.translation
 res://logs/simple_log.Target position.translation
 res://logs/simple_log.Target Speed.translation
 res://logs/simple_log.Origin Lat.translation
@@ -15,3 +15,5 @@ res://logs/simple_log.Destination Lat.translation
 res://logs/simple_log.Destination Lon.translation
 res://logs/simple_log.Completed.translation
 res://scenes/main/main.tscn
+res://scripts/core/simulation_engine.gd
+res://scripts/core/DebugLogger.gd

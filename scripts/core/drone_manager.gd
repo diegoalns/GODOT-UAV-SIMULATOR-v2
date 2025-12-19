@@ -4,8 +4,12 @@ extends Node
 var drones: Dictionary = {}
 var visualization_system: VisualizationSystem
 
+# Static reference to VisualizationSystem for collision marker access
+static var visualization_system_ref: VisualizationSystem = null
+
 func set_visualization_system(vis_system: VisualizationSystem):
 	visualization_system = vis_system
+	DroneManager.visualization_system_ref = vis_system  # Set static reference for drone access
 
 func create_test_drone(id: String, start: Vector3, end: Vector3, model: String, origin_node_id: String = "", dest_node_id: String = "", precomputed_route: Array = []) -> Drone:
 	"""

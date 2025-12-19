@@ -49,7 +49,7 @@ Godot-UAV-Simulator - v2/
 │   └── GridMap/
 │       └── terrain_gridmap.tscn       # Terrain visualization scene
 ├── data/
-│   ├── Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Fixed.csv  # Flight plan data
+│   ├── Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv  # Flight plan data
 │   └── Filtered_FAA_UAS_FacilityMap_Data_LGA.csv  # Terrain altitude data
 ├── resources/                         # 3D models and meshes
 ├── drone_models_specifications.txt    # Detailed drone model documentation
@@ -97,7 +97,7 @@ The server will start on `ws://localhost:8765` and wait for connections from God
 ### 3. Control the Simulation
 
 - **Start/Pause**: Use the UI controls in the top-left corner
-- **Speed Multiplier**: Adjust simulation speed (1x, 2x, 5x, 10x)
+- **Speed Multiplier**: Adjust simulation speed via slider (0.5x to 5.0x)
 - **Headless Mode**: Disable visualization for faster performance
 - **Drone Port Selection**: Select different drone ports to view their locations
 - **Active Drones Panel**: Left side of screen displays all active (flying) drones with their first waypoint times (simulation time)
@@ -132,7 +132,7 @@ For detailed specifications, see `drone_models_specifications.txt`.
 ## Flight Plan Data
 
 Flight plans are loaded from CSV files in the `data/` directory. The default file is:
-- `Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Fixed.csv`
+- `Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv`
 
 ### CSV Format
 
@@ -211,10 +211,16 @@ For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Collision Detection
 
-- **Detection Radius**: 15.0 meters per drone (30m diameter safety zone)
+- **Detection Radius**: 13.0 meters per drone (26m diameter safety zone)
 - **Arrival Threshold**: 5.0 meters for waypoint arrival
 - **Method**: Area3D-based automatic collision detection via Godot physics engine
 - **Logging**: All collision events logged to CSV via SimpleLogger
+- **Visualization**: Persistent collision markers are automatically created at collision locations
+  - Orange/yellow sphere markers (10m radius) mark where collisions occurred
+  - Markers display drone IDs and distance information
+  - Markers remain visible for the entire simulation duration
+  - Markers can be toggled on/off via `VisualizationSystem.set_show_collision_markers()`
+  - All markers can be cleared via `VisualizationSystem.clear_collision_markers()`
 
 ## Coordinate Systems
 
@@ -314,7 +320,7 @@ Nodes use format: `L{level}_X{x}_Y{y}` (e.g., `L0_X0_Y0`)
 
 ---
 
-**Last Updated**: 2025-01-27 - Added Active Drones Display feature
+**Last Updated**: 2025-01-27 - Added Active Drones Display feature; Updated documentation to match current codebase (CSV filename, collision radius, speed multiplier range, route lines, drone ports); Added persistent collision marker visualization system
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.8+
 

@@ -55,7 +55,7 @@ var route_request_sent_system_clock_time: float = 0.0  # System clock time when 
 var route_response_received_system_clock_time: float = 0.0  # System clock time when route response was received (float, seconds since Unix epoch - matches Python time.time())
 
 # Collision detection system - now using Area3D with signals
-var collision_radius: float = 15.0  # Collision detection radius in meters - creates a 60m diameter safety zone
+var collision_radius: float = 5.0  # Collision detection radius in meters - creates a 20m diameter safety zone
 var is_colliding: bool = false      # Boolean flag indicating if drone is currently in collision state
 var collision_partners: Array = []  # Array of drone IDs currently in collision with this drone
 var collision_shape: CollisionShape3D = null  # Reference to collision shape for Area3D
@@ -481,6 +481,14 @@ func _on_area_entered(other_area: Area3D):
 			var distance = current_position.distance_to(other_drone.current_position)
 			var threshold = collision_radius + other_drone.collision_radius
 			_log_collision_event("COLLISION_START", other_drone, distance, threshold)
+			
+			# Create persistent collision marker at midpoint between drones
+			# Only create marker if this drone's ID is lexicographically smaller (prevents duplicates)
+			if drone_id < other_drone.drone_id:
+				var collision_midpoint = (current_position + other_drone.current_position) / 2.0
+				var sim_time = SimulationEngine.current_simulation_time
+				if DroneManager.visualization_system_ref:
+					DroneManager.visualization_system_ref.add_collision_marker(collision_midpoint, drone_id, other_drone.drone_id, distance, sim_time)
 		
 		# Update collision state
 		var previous_collision_state = is_colliding

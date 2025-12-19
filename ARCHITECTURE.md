@@ -83,7 +83,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 
 **Key Variables**:
 - `simulation_time: float` - Current simulation time in seconds
-- `speed_multiplier: float` - Time acceleration factor (1x, 2x, 5x, 10x)
+- `speed_multiplier: float` - Time acceleration factor (0.5x to 5.0x via slider)
 - `running: bool` - Simulation pause/play state
 - `headless_mode: bool` - Visualization on/off toggle
 
@@ -118,6 +118,10 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - `create_test_drone()` - Creates and initializes a drone
 - `update_all()` - Updates all drones with delta time
 - `remove_completed_drones()` - Removes completed drones and cleans up their visual representations (meshes and labels)
+- `set_visualization_system()` - Sets VisualizationSystem reference and static reference for drone access
+
+**Static Reference**:
+- `visualization_system_ref: VisualizationSystem` - Static reference to VisualizationSystem for drone access to collision marker functions
 
 #### 3. FlightPlanManager (`scripts/core/flight_plan_manager.gd`)
 
@@ -221,21 +225,56 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - `gridmap_manager: GridMapManager` - Terrain data management
 - `drone_meshes: Dictionary` - Visual drone representations (String → Node3D)
 - `drone_labels: Dictionary` - 3D text labels above drones (String → Label3D)
+- `route_lines: Dictionary` - Route line visualizations (String → MeshInstance3D)
+- `route_colors: Dictionary` - Route line colors per drone (String → Color)
+- `collision_markers: Array` - Persistent collision markers (Array of marker dictionaries)
+- `collision_marker_container: Node3D` - Container node for all collision markers
 - `balloon_ref: CharacterBody3D` - Camera controller
 
 **Label System**:
 - `show_drone_labels: bool` - Enable/disable label display (default: true)
-- `label_offset_height: float` - Vertical offset above drone in meters (default: 200.0)
-- `label_font_size: int` - Font size in pixels (default: 24)
-- `label_billboard_mode: Label3D.BillboardMode` - Billboard mode for camera-facing labels
+- `label_offset_height: float` - Vertical offset above drone in meters (default: 50.0)
+- `label_font_size: int` - Font size in pixels (default: 32)
+- `label_pixel_size: float` - Pixel size for 3D text scaling (default: 1.0)
+- `label_billboard_mode: BaseMaterial3D.BillboardMode` - Billboard mode for camera-facing labels (default: BILLBOARD_ENABLED)
 - Labels display: drone ID, model type, current speed (if moving), and status (waiting/completed)
 - Labels automatically update position and text as drones move
 
+**Route Line Visualization**:
+- `route_line_width: float` - Width of route lines in meters (default: 5.0)
+- `route_line_opacity: float` - Opacity of route lines 0.0-1.0 (default: 0.7)
+- Route lines are displayed as colored 3D meshes following the drone's waypoint path
+- Each drone gets a unique color based on its ID (HSV color space)
+- Route lines are automatically shown when drone is flying and hidden when completed
+- Route lines are cleaned up when drones are removed
+
+**Drone Port Visualization**:
+- Drone ports are visualized as black box meshes (500m x 2m x 500m) at their geographic locations
+- Ports are added via `add_drone_port()` function during initialization
+- Port positions are extracted from flight plan CSV data
+
+**Collision Marker System**:
+- `show_collision_markers: bool` - Enable/disable collision marker display (default: true)
+- `collision_marker_size: float` - Size of collision markers in meters (default: 10.0)
+- `collision_marker_color: Color` - Orange/yellow color for markers (default: Color(1.0, 0.65, 0.0, 0.8))
+- Persistent markers are created at collision midpoint when collisions are detected
+- Markers remain visible for the entire simulation duration
+- Each marker displays collision information (drone IDs and distance) via Label3D
+- Markers are stored in `collision_markers` array with metadata (position, drone IDs, distance, simulation time)
+
 **Key Functions**:
-- `add_drone()` - Adds visual representation and label for drone
-- `update_drone_position()` - Updates drone mesh position and label text
-- `remove_drone()` - Removes drone visualization and label
+- `add_drone()` - Adds visual representation, label, and route line for drone
+- `update_drone_position()` - Updates drone mesh position, label text, and route line
+- `remove_drone()` - Removes drone visualization, label, and route line
+- `add_drone_port()` - Adds visual representation for a drone port (black box mesh)
+- `add_collision_marker()` - Creates persistent collision marker at specified position
+- `clear_collision_markers()` - Removes all collision markers from visualization
+- `set_show_collision_markers()` - Toggles visibility of collision markers
+- `get_collision_marker_count()` - Returns current number of collision markers
 - `setup_terrain()` - Initializes terrain GridMap
+- `setup_collision_markers()` - Initializes collision marker container
+- `_update_route_line()` - Updates route line visualization for a drone
+- `_create_route_line_mesh()` - Creates 3D mesh for route line visualization
 
 **Camera Controls**:
 - WASD: Move camera
@@ -374,6 +413,12 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - `title_font_size: int` - Font size for title label (default: 18)
 - `drone_entry_font_size: int` - Font size for drone entries (default: 14)
 
+**Key Variables**:
+- `update_timer: float` - Timer for throttling updates (default: 0.0)
+- `update_interval: float` - Update interval in seconds (default: 0.1 = 10 updates per second)
+- `last_active_drone_ids: Array` - Array of drone IDs from last update for change detection
+- `max_displayed_drones: int` - Maximum number of drones to display before scrolling (default: 20)
+
 **Key Functions**:
 - `setup_panel()` - Creates and configures panel UI elements
 - `set_drone_manager()` - Sets DroneManager reference
@@ -386,7 +431,8 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - Drone must have valid first waypoint time (`first_waypoint_time >= 0.0`)
 
 **Update Frequency**:
-- Updates every frame via `_process()` to reflect current active drones
+- Updates are throttled to 10 updates per second (0.1 second interval) for performance
+- Uses change detection to only update UI when drone list changes
 
 #### 11. Drone (`scripts/drone/drone.gd`)
 
@@ -423,7 +469,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - Waypoint arrival threshold: 5.0 meters
 
 **Collision Detection**:
-- Radius: 15.0 meters per drone (30m diameter safety zone)
+- Radius: 13.0 meters per drone (26m diameter safety zone)
 - Automatic via Area3D signals
 - Logged to CSV via SimpleLogger
 
@@ -755,7 +801,7 @@ Both simulation time and system clock time are tracked for:
 ### Data Files
 
 **Flight Plans**:
-- `data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Fixed.csv` - Main flight plan data
+- `data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv` - Main flight plan data
 - Format: 13 columns with flight plan details
 
 **Terrain Data**:
@@ -769,6 +815,6 @@ Both simulation time and system clock time are tracked for:
 
 ---
 
-**Last Updated**: 2025-01-27 - Added ActiveDronesPanel component and first_waypoint_time tracking
+**Last Updated**: 2025-01-27 - Added ActiveDronesPanel component and first_waypoint_time tracking; Updated documentation to match current codebase (CSV filename, collision radius, speed multiplier range, route lines, drone ports, label configuration); Added persistent collision marker visualization system
 **Documentation Version**: 1.2
 
