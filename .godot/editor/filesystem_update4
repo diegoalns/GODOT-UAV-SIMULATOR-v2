@@ -1,4 +1,4 @@
-res://logs/mean_distances.Mean.translation
+res://scenes/main/main.tscn
 res://logs/collision_log.Event.translation
 res://logs/simple_log.DroneID.translation
 res://logs/collision_log.Drone.translation
@@ -14,6 +14,3 @@ res://logs/simple_log.Origin Lon.translation
 res://logs/simple_log.Destination Lat.translation
 res://logs/simple_log.Destination Lon.translation
 res://logs/simple_log.Completed.translation
-res://scenes/main/main.tscn
-res://scripts/core/simulation_engine.gd
-res://scripts/core/DebugLogger.gd

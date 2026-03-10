@@ -40,6 +40,7 @@ Godot-UAV-Simulator - v2/
 │   │       ├── WebSocketServer.py     # Python WebSocket server
 │   │       ├── cbs_pathfinder.py      # Conflict-Based Search pathfinding
 │   │       ├── graph_loader.py        # Graph data loading
+│   │       ├── sim_logger.py          # Structured logger + Python CSV route outputs
 │   │       └── coordinate_constants.py # Coordinate system constants
 │   └── ui/
 │       └── simple_ui.gd                # User interface controls
@@ -177,6 +178,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
   "type": "request_route",
   "drone_id": "FP000001",
   "model": "Long Range FWVTOL",
+  "etd_seconds": 1234.5,
   "start_node_id": "L0_X0_Y0",
   "end_node_id": "L0_X6_Y2",
   "start_position": {"lon": 0.0, "lat": 0.0, "alt": 0.0},
@@ -199,7 +201,7 @@ For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
       "lat": 40.55417343,
       "lon": -73.99583928,
       "altitude": 50.0,
-      "speed": 44.0,
+      "speed": 55.0,
       "description": "Origin (waypoint 1)"
     }
   ],
@@ -209,9 +211,11 @@ For detailed architecture documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 }
 ```
 
+CBS timing and returned waypoint speeds now use the same `max_speed` provided by Godot (no speed scaling factor applied in Python). For pre-requested routes, CBS temporal planning starts from `etd_seconds`, while `simulation_time` is still used for housekeeping (e.g., registry cleanup). The CBS node conflict time threshold is configured at 20 seconds.
+
 ## Collision Detection
 
-- **Detection Radius**: 13.0 meters per drone (26m diameter safety zone)
+- **Detection Radius**: 5.0 meters per drone (10m diameter safety zone)
 - **Arrival Threshold**: 5.0 meters for waypoint arrival
 - **Method**: Area3D-based automatic collision detection via Godot physics engine
 - **Logging**: All collision events logged to CSV via SimpleLogger
@@ -257,16 +261,53 @@ Nodes use format: `L{level}_X{x}_Y{y}` (e.g., `L0_X0_Y0`)
 
 ### CSV Logging (SimpleLogger)
 - **Drone States**: `logs/simple_log.csv` - Position, speed, target, completion status
-- **Mean Distances**: `logs/mean_distances.csv` - Average distance between all drones
 - **Collision Events**: `logs/collision_log.csv` - Collision start/end events with distances
 - **Logging Interval**: Every 10 seconds of simulation time
+
+### Python Route/Time CSV Logging
+- **Received Routes**: `logs/python_routes_received.csv` - One row per waypoint per planned drone route from Python (includes overfly timing)
+- **Startup behavior**: `python_routes_received.csv` is cleared when the Python WebSocket server starts, then rows are appended during that run
+- **Notebook waypoint labels**: `logs/uav_route_visualization.ipynb` can annotate each plotted waypoint with `overfly_time_sim_s` from `python_routes_received.csv` (3D and 2D plots)
+- **Overlap handling in notebook**: waypoint time labels use seeded random positional jitter (plus a light bbox in 2D) to keep labels readable when drones share the same route/waypoints; current jitter defaults are `label_jitter_xy=0.15`, `label_jitter_z=0.06`, `label_jitter_2d=0.15`
+- **Route-color labels in notebook**: each waypoint time label uses the same color as its corresponding plotted route line for easier route association
+- **Interactive route controls**: notebook now uses Plotly for interactive 3D/2D route views; click legend items to toggle per-route visibility and use `Labels ON/OFF` buttons to control time-label traces
 
 ### Debug Logging (DebugLogger)
 - **Categories**: ROUTE, WEBSOCKET, DRONE, SIMULATION, TERRAIN, VISUALIZATION, HEAP, FLIGHT_PLAN, GENERAL
 - **Log Levels**: DEBUG, INFO, WARNING, ERROR
 - **Verbosity Levels**: SILENT, MINIMAL, NORMAL, VERBOSE
-- **Console Output**: Verbose mode shows detailed tables and timing information
+- **Table Format**: All messages use fixed-width columns for unified readable output with Python
 - **Note**: DebugLogger is optional and must be configured as autoload singleton in Project Settings
+
+### Cross-Language Log Standard (Fixed-Width Table)
+
+Godot (`DebugLogger`) and Python (`sim_logger.py`) emit logs in a unified fixed-width table format:
+
+| Column | Width | Description |
+|--------|-------|-------------|
+| ts | 12 | Timestamp (sim time in Godot, Unix time in Python) |
+| level | 8 | DEBUG, INFO, WARNING, ERROR |
+| category | 14 | Subsystem (ROUTE, WEBSOCKET, DRONE, etc.) |
+| source | 6 | `godot` or `python` |
+| event | 32 | Short event name |
+| data | 150 | Key=value pairs |
+
+Example output (both Godot and Python):
+
+```
+ts            level    category       source event                           data
+12.34s        INFO     ROUTE          godot  connection_established         {url=ws://localhost:8765}
+1730556789.12 INFO     WEBSOCKET      python client_connected                {client_address=127.0.0.1 status=ready}
+```
+
+Python logger runtime controls:
+- `SIM_LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`)
+- `SIM_LOG_FORMAT`: `table` (default), `json`, or `pretty`
+
+Examples:
+- `SIM_LOG_FORMAT=table` for aligned fixed-width output (default)
+- `SIM_LOG_FORMAT=json` for one JSON object per line (dashboards/parsing)
+- `SIM_LOG_FORMAT=pretty` for compact `[LEVEL][CATEGORY][python] event | key=value` format
 
 ## Development
 
@@ -320,7 +361,7 @@ Nodes use format: `L{level}_X{x}_Y{y}` (e.g., `L0_X0_Y0`)
 
 ---
 
-**Last Updated**: 2025-01-27 - Added Active Drones Display feature; Updated documentation to match current codebase (CSV filename, collision radius, speed multiplier range, route lines, drone ports); Added persistent collision marker visualization system
+**Last Updated**: 2026-03-04 - Increased CBS node conflict threshold to 20 seconds and kept `python_routes_received.csv` startup reset behavior
 **Godot Version**: 4.3 (GL Compatibility)
 **Python Version**: 3.8+
 

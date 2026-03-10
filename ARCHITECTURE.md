@@ -322,19 +322,16 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 **Responsibilities**:
 - Logs drone states to CSV files
 - Logs collision events
-- Logs mean distance calculations
 - Manages log file creation and writing
 
 **Key Log Files**:
 - `logs/simple_log.csv` - Main drone states (Time, DroneID, Position, etc.)
-- `logs/mean_distances.csv` - Mean distance between drones over time
 - `logs/collision_log.csv` - Collision events (start/end, distances, positions)
 
 **Key Functions**:
 - `create_log_file()` - Creates log files and directories
 - `update()` - Called each frame to log data
 - `log_drone_states()` - Logs current drone positions and states
-- `log_mean_distance()` - Logs mean distance between all drones
 - `log_collision_event()` - Logs collision start/end events
 
 **Logging Interval**:
@@ -342,15 +339,17 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 
 #### 9. DebugLogger (`scripts/core/DebugLogger.gd`)
 
-**Purpose**: Advanced logging system with categories and verbosity levels
+**Purpose**: Advanced logging system with categories, verbosity levels, and unified fixed-width table format
 
 **Type**: Autoload singleton (when configured in Project Settings)
 
 **Responsibilities**:
+- Fixed-width table output (unified with Python sim_logger)
 - Categorized logging (ROUTE, WEBSOCKET, DRONE, etc.)
 - Verbosity level control (SILENT, MINIMAL, NORMAL, VERBOSE)
 - Log level filtering (DEBUG, INFO, WARNING, ERROR)
 - Timestamp and formatting support
+- Structured event helpers (`log_event_info`, `log_event_warning`, `log_event_error`)
 
 **Key Enums**:
 - `LogLevel`: DEBUG, INFO, WARNING, ERROR
@@ -359,14 +358,17 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 
 **Key Functions**:
 - `log_debug()` / `log_info()` / `log_warning()` / `log_error()` - Category-based logging
-- `should_show_verbose()` - Checks if verbose output is enabled
-- `should_show_tables()` - Checks if table formatting is enabled
-- `get_current_simulation_time()` - Gets simulation time for timestamps
+- `print_table_line()` - Direct fixed-width row output for scripts without full logger flow
+- `format_table_row_string()` - Static formatter matching Python column widths
+- `get_table_header()` - Header row for fixed-width table
+- `set_table_format()` - Toggle fixed-width vs legacy format
 
 **Configuration**:
+- `use_table_format: bool = true` - Fixed-width columns (default)
 - `current_log_level: LogLevel = LogLevel.INFO` - Minimum log level
 - `current_verbosity: VerbosityLevel = VerbosityLevel.NORMAL` - Detail level
 - `category_enabled: Dictionary` - Per-category enable/disable flags
+- `always_include_data: bool = true` - Keeps key/value payload visible
 
 #### 10. SimpleUI (`scripts/ui/simple_ui.gd`)
 
@@ -469,7 +471,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - Waypoint arrival threshold: 5.0 meters
 
 **Collision Detection**:
-- Radius: 13.0 meters per drone (26m diameter safety zone)
+- Radius: 5.0 meters per drone (10m diameter safety zone)
 - Automatic via Area3D signals
 - Logged to CSV via SimpleLogger
 
@@ -484,6 +486,9 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - Coordinates pathfinding via CBS algorithm
 - Maintains active drone registry
 - Sends route responses back to Godot
+- Writes Python-side CSV route/timing logs for post-run analysis
+- Uses Godot-provided `max_speed` directly for CBS timing and waypoint speeds
+- Uses flight plan `etd_seconds` as CBS `start_time` for temporal planning
 
 **Key Functions**:
 - `websocket_handler()` - Main message handler
@@ -501,7 +506,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
   "drone_id": {
     "route_nodes": [node1, node2, ...],  # List of str
     "overfly_times": [t1, t2, ...],      # List of float (seconds)
-    "start_time": float                    # Simulation time
+    "start_time": float                    # CBS start time (ETD-based)
   }
 }
 ```
@@ -519,7 +524,7 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - Timeout: 3 seconds maximum pathfinding time
 
 **Key Parameters**:
-- `conflict_threshold: float` - Time window for conflict detection (10 seconds)
+- `conflict_threshold: float` - Time window for conflict detection (20 seconds)
 - `max_cbs_iterations: int` - Maximum algorithm iterations (10)
 - `round_trip: bool` - Whether to plan return journey (True)
 - `wait_time_at_destination: float` - Wait duration in seconds (60.0)
@@ -566,6 +571,42 @@ These components communicate via WebSocket protocol for real-time bidirectional 
 - `get_coordinate_bounds_meters()` - Returns coordinate bounds in meters
 - `degrees_to_meters()` - Converts lat/lon degrees to meters relative to origin
 
+#### 5. Python Structured Logger (`scripts/Python/Route Gen Basic CBS/sim_logger.py`)
+
+**Purpose**: Structured logging with format options; default fixed-width table matches Godot
+
+**Responsibilities**:
+- Provide `log_event(level, category, event, **fields)` API
+- Fixed-width table format (default) - same column widths as Godot DebugLogger
+- JSON-line format for dashboards and parsing
+- Pretty format for compact human-readable output
+- CSV writer for per-waypoint route timing output
+
+**Column Layout (table format)**:
+- ts (12), level (8), category (14), source (6), event (32), data (150)
+
+**Runtime Controls**:
+- `SIM_LOG_LEVEL`: minimum level (`DEBUG|INFO|WARNING|ERROR`, default: INFO)
+- `SIM_LOG_FORMAT`: `table` (default), `json`, or `pretty`
+
+**Python CSV Outputs**:
+- `logs/python_routes_received.csv` - One row per waypoint for each received route (`plan_id`, node IDs, overfly time, segment/cumulative durations)
+- Startup behavior: file is cleared when `WebSocketServer.py` starts, then rows are appended for that run
+
+## Logging Standardization (Fixed-Width Table)
+
+The simulation uses a unified fixed-width table format across both runtimes:
+
+- **Godot**: `DebugLogger` emits `ts | level | category | source | event | data` rows
+- **Python**: `sim_logger.py` uses the same column layout when `SIM_LOG_FORMAT=table` (default)
+
+Columns: ts (12), level (8), category (14), source (6), event (32), data (80). Source is `godot` or `python`.
+
+This improves:
+- **Readability**: aligned columns for quick terminal scanning
+- **Consistency**: one format for both runtimes
+- **Correlation**: same structure makes it easy to merge Godot and Python logs
+
 ## Data Flow
 
 ### Route Pre-Request Flow (10 minutes before ETD)
@@ -578,11 +619,12 @@ SimulationEngine (simulation_time)
     │
     ├─> RoutePreRequestManager.send_route_request(plan)
     │   ├─> Creates WebSocket message
+    │   ├─> Includes etd_seconds from flight plan
     │   ├─> WebSocketManager.send_message(message)
     │   └─> Tracks request in pending_route_requests
     │
     └─> Python Server receives request
-        ├─> CBS Pathfinder finds route
+        ├─> CBS Pathfinder finds route using ETD as start_time
         ├─> Stores route in registry
         └─> Sends response back
             │
@@ -794,8 +836,8 @@ Both simulation time and system clock time are tracked for:
 - Manages WebSocket connection to Python server
 
 **DebugLogger** (`scripts/core/DebugLogger.gd`):
-- Optional autoload singleton (not currently in `project.godot`)
-- Can be added via Project Settings → Autoload
+- Optional autoload singleton (add via Project Settings → Autoload)
+- Fixed-width table format unified with Python sim_logger
 - Provides categorized logging with verbosity control
 
 ### Data Files
@@ -813,8 +855,16 @@ Both simulation time and system clock time are tracked for:
 - `scripts/Python/Route Gen Basic CBS/regular_lattice_graph.pkl` - NetworkX graph pickle file
 - Contains airspace graph with node positions and edge weights
 
+**Python Timing Analysis Logs**:
+- `logs/python_routes_received.csv` - Detailed waypoint timing exported by `WebSocketServer.py` via `sim_logger.py`
+- `logs/python_routes_received.csv` lifecycle - reset on server startup to avoid cross-run carryover, then append mode during runtime
+- `logs/uav_route_visualization.ipynb` - Route plotting notebook; can label each waypoint with `overfly_time_sim_s` from `python_routes_received.csv` for 3D/2D inspection
+- `logs/uav_route_visualization.ipynb` label readability - seeded random label jitter (and 2D text background boxes) reduces overlap when multiple drones share identical waypoint paths; current default spread is `xy=0.15`, `z=0.06` (3D), `2d=0.15`
+- `logs/uav_route_visualization.ipynb` route-color matching - waypoint labels use each route line's color to improve visual association between text and path
+- `logs/uav_route_visualization.ipynb` interactive visibility controls - Plotly legends toggle per-route visibility and `Labels ON/OFF` buttons control waypoint time-label traces in both 3D and 2D views
+
 ---
 
-**Last Updated**: 2025-01-27 - Added ActiveDronesPanel component and first_waypoint_time tracking; Updated documentation to match current codebase (CSV filename, collision radius, speed multiplier range, route lines, drone ports, label configuration); Added persistent collision marker visualization system
-**Documentation Version**: 1.2
+**Last Updated**: 2026-03-04 - Increased CBS node conflict threshold to 20 seconds; prior updates retained
+**Documentation Version**: 1.4
 

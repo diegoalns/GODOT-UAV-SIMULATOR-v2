@@ -23,16 +23,8 @@ func _ready():
 	if logger_instance == null:
 		push_error("DebugLogger autoload singleton not found! Make sure it's added in Project Settings → Autoload")
 	
-	if logger_instance and logger_instance.should_show_verbose():
-		print("\n" + "=".repeat(80))
-		print("│ 🌐 WEBSOCKET CLIENT MANAGER")
-		print("=".repeat(80))
-		print("│ Initializing connection to Python server...")
-		print("│ Target: %s" % default_url)
-		print("=".repeat(80) + "\n")
-	else:
-		if logger_instance:
-			logger_instance.log_info(DebugLogger.Category.WEBSOCKET, "Initializing connection to Python server at %s" % default_url, {"url": default_url})
+	if logger_instance:
+		logger_instance.log_info(DebugLogger.Category.WEBSOCKET, "initializing", {"url": default_url})
 	
 	# Create reconnect timer
 	reconnect_timer = Timer.new()
@@ -63,28 +55,16 @@ func _physics_process(_delta):
 		# Connection is open and ready for communication
 		if not is_connected:
 			# First time connection established - emit signal and update status
-			if logger_instance and logger_instance.should_show_verbose():
-				print("├" + "─".repeat(78) + "┤")
-				print("│ ✅ CONNECTION ESTABLISHED")
-				print("│ Status: Connected to %s" % default_url)
-				print("└" + "─".repeat(78) + "┘\n")
-			else:
-				if logger_instance:
-					logger_instance.log_info(DebugLogger.Category.WEBSOCKET, "Connection established to %s" % default_url, {"url": default_url})
+			if logger_instance:
+				logger_instance.log_info(DebugLogger.Category.WEBSOCKET, "connection_established", {"url": default_url})
 			is_connected = true  # Update connection flag (bool)
 			emit_signal("connected")  # Emit connection signal for other systems
 	elif state == WebSocketPeer.STATE_CLOSED:
 		# Connection closed or lost - attempt reconnection
 		if is_connected:
 			# Connection was previously open but now closed
-			if logger_instance and logger_instance.should_show_verbose():
-				print("\n" + "├" + "─".repeat(78) + "┤")
-				print("│ ⚠ CONNECTION LOST")
-				print("│ Attempting to reconnect...")
-				print("└" + "─".repeat(78) + "┘\n")
-			else:
-				if logger_instance:
-					logger_instance.log_warning(DebugLogger.Category.WEBSOCKET, "Connection lost - attempting to reconnect", {"url": default_url})
+			if logger_instance:
+				logger_instance.log_warning(DebugLogger.Category.WEBSOCKET, "connection_lost", {"url": default_url})
 			is_connected = false  # Update connection flag (bool)
 			emit_signal("disconnected")  # Emit disconnection signal for other systems
 			schedule_reconnect()  # Schedule automatic reconnection attempt

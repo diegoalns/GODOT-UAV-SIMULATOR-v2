@@ -5,7 +5,7 @@ This module implements a simplified CBS algorithm for multi-agent pathfinding
 where existing drone routes are frozen and only the new requesting drone can be replanned.
 
 Key Features:
-- Node-based conflict detection (10-second threshold)
+- Node-based conflict detection (20-second threshold)
 - Constrained A* pathfinding considering simulation time
 - Edge weight-based temporal calculations
 - Integration with drone registry for constraint extraction
@@ -97,7 +97,7 @@ class SearchNode:
 # CONSTRAINT EXTRACTION FROM REGISTRY
 # ============================================================================
 
-def extract_node_constraints(registry: Dict, conflict_threshold: float = 10.0) -> List[NodeConstraint]:
+def extract_node_constraints(registry: Dict, conflict_threshold: float = 20.0) -> List[NodeConstraint]:
     """
     Extract node constraints from active drone registry.
     Creates constraints for each node that active drones will occupy, with
@@ -106,7 +106,7 @@ def extract_node_constraints(registry: Dict, conflict_threshold: float = 10.0) -
     Args:
         registry: Dict - Active drones registry with structure:
                         {drone_id: {"route_nodes": [str], "overfly_times": [float]}}
-        conflict_threshold: float - Time threshold in seconds for conflict detection (default: 10.0)
+        conflict_threshold: float - Time threshold in seconds for conflict detection (default: 20.0)
     
     Returns:
         List[NodeConstraint] - List of node constraints extracted from registry
@@ -343,7 +343,7 @@ def cbs_find_round_trip_path(
     speed: float,
     registry: Dict,
     wait_time_at_destination: float = 60.0,
-    conflict_threshold: float = 10.0,
+    conflict_threshold: float = 20.0,
     max_cbs_iterations: int = 10
 ) -> Optional[Tuple[List[str], List[float]]]:
     """
@@ -359,7 +359,7 @@ def cbs_find_round_trip_path(
         speed: float - Drone speed in m/s
         registry: Dict - Active drones registry for constraint extraction
         wait_time_at_destination: float - Wait time at destination before return (seconds, default: 60.0)
-        conflict_threshold: float - Time threshold for conflict detection in seconds (default: 10.0)
+        conflict_threshold: float - Time threshold for conflict detection in seconds (default: 20.0)
         max_cbs_iterations: int - Maximum CBS iterations to prevent infinite loops (default: 10)
     
     Returns:
@@ -569,7 +569,7 @@ def cbs_find_path(
     start_time: float,
     speed: float,
     registry: Dict,
-    conflict_threshold: float = 10.0,
+    conflict_threshold: float = 20.0,
     max_cbs_iterations: int = 10,
     round_trip: bool = True,
     wait_time_at_destination: float = 60.0
@@ -585,7 +585,7 @@ def cbs_find_path(
         start_time: float - Simulation time when route starts (seconds)
         speed: float - Drone speed in m/s
         registry: Dict - Active drones registry for constraint extraction
-        conflict_threshold: float - Time threshold for conflict detection in seconds (default: 10.0)
+        conflict_threshold: float - Time threshold for conflict detection in seconds (default: 20.0)
         max_cbs_iterations: int - Maximum CBS iterations to prevent infinite loops (default: 10)
         round_trip: bool - If True, plan round trip (origin → destination → origin) (default: True)
         wait_time_at_destination: float - Wait time at destination before return in seconds (default: 60.0)

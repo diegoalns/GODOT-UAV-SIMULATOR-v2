@@ -13,7 +13,7 @@ var terrain_gridmap: GridMap = null  # GridMap node for terrain visualization
 var gridmap_manager: GridMapManager = null  # Manager for terrain data and population
 
 # Movement and control variables
-var move_speed = 10000.0  # Speed for movement
+var move_speed = 30000.0  # Speed for movement
 var rotation_speed = 0.001  # Speed of rotation with mouse
 var mouse_sensitivity = 0.001
 var camera_offset = Vector3(0, 5, 0)  # Offset from balloon position - slightly above center for better view
@@ -39,6 +39,8 @@ var align_drone_to_route: bool = true
 
 # model_yaw_offset_degrees: float - additional yaw angle to correct the model's intrinsic forward axis if it is not -Z (size: 1 scalar in degrees)
 var model_yaw_offset_degrees: float = 0.0
+
+var logger_instance: Node = null
 
 # Drone label configuration
 var show_drone_labels: bool = true  # bool: Whether to display labels above drones (default: true)
@@ -102,6 +104,7 @@ func set_camera_clipping_planes(near_distance: float, far_distance: float):
 				break
 
 func _ready():
+	logger_instance = DebugLogger.get_instance()
 	setup_balloon()
 	setup_camera()
 	setup_lighting()      # Create DirectionalLight3D first
@@ -200,12 +203,14 @@ func setup_lighting():
 	NOTE: This function must be called BEFORE setup_environment() so that the
 	DirectionalLight3D can control the sun disk position in the ProceduralSkyMaterial
 	"""
-	print("VisualizationSystem: Setting up sun lighting...")
+	if logger_instance:
+		logger_instance.print_table_line("INFO", "VISUALIZATION", "setup_sun_lighting", {})
 	
 	# First, remove any existing DirectionalLight3D nodes to prevent conflicts
 	for child in get_children():
 		if child is DirectionalLight3D:
-			print("VisualizationSystem: Removing existing DirectionalLight3D: %s" % child.name)
+			if logger_instance:
+				logger_instance.print_table_line("INFO", "VISUALIZATION", "removing_directional_light", {"child": child.name})
 			child.queue_free()
 	
 	# Create directional light to simulate the sun
@@ -259,10 +264,8 @@ func setup_lighting():
 	# Add the sun light to the scene
 	add_child(sun_light)
 	
-	print("VisualizationSystem: Sun positioned at %s° elevation, %s° azimuth" % [sun_elevation_degrees, sun_azimuth_degrees])
-	print("VisualizationSystem: Sun light position: %s" % sun_light.position)
-	print("VisualizationSystem: Sun light rotation: %s" % sun_light.rotation_degrees)
-	print("VisualizationSystem: Sun light sky_mode: %s" % sun_light.sky_mode)
+	if logger_instance:
+		logger_instance.print_table_line("INFO", "VISUALIZATION", "sun_positioned", {"elevation": sun_elevation_degrees, "azimuth": sun_azimuth_degrees, "position": str(sun_light.position), "sky_mode": sun_light.sky_mode})
 
 func setup_ground():
 	"""
@@ -335,7 +338,8 @@ func setup_terrain():
 	# Load terrain data and populate the GridMap
 	if gridmap_manager.load_terrain_data():
 		if gridmap_manager.populate_gridmap():
-			print("VisualizationSystem: Terrain system initialized successfully")
+			if logger_instance:
+				logger_instance.print_table_line("INFO", "VISUALIZATION", "terrain_initialized", {})
 		else:
 			push_error("VisualizationSystem: Failed to populate terrain GridMap")
 	else:
@@ -349,7 +353,8 @@ func setup_collision_markers():
 	collision_marker_container = Node3D.new()
 	collision_marker_container.name = "CollisionMarkers"
 	add_child(collision_marker_container)
-	print("VisualizationSystem: Collision marker system initialized")
+	if logger_instance:
+		logger_instance.print_table_line("INFO", "VISUALIZATION", "collision_markers_initialized", {})
 
 func setup_balloon():
 	balloon_ref = CharacterBody3D.new()
@@ -502,8 +507,8 @@ func add_drone(drone: Drone):
 		drone_node.add_child(label_node)  # Attach label to drone visual node
 		drone_labels[drone.drone_id] = label_node  # Store label reference in dictionary for later updates (dict entry: str -> Label3D)
 		
-		# Debug: Verify label was created and positioned correctly
-		print("Created label for drone %s at offset (0, %.1f, 0)" % [drone.drone_id, label_offset_height * visual_scale])
+		if logger_instance:
+			logger_instance.print_table_line("INFO", "VISUALIZATION", "drone_label_created", {"drone_id": drone.drone_id, "offset_y": label_offset_height * visual_scale})
 	
 	#print("Added visualization for drone %s" % drone.drone_id)
 
@@ -540,8 +545,8 @@ func remove_drone(drone: Drone):
 	if route_colors.has(drone.drone_id):
 		route_colors.erase(drone.drone_id)  # Remove color reference from dictionary (dict entry: str -> Color)
 	
-	if had_visualization:
-		print("Removed visualization for drone %s" % drone.drone_id)
+	if had_visualization and logger_instance:
+		logger_instance.print_table_line("INFO", "VISUALIZATION", "drone_visualization_removed", {"drone_id": drone.drone_id})
 
 func update_drone_position(drone: Drone):
 	if not enabled:
@@ -636,7 +641,8 @@ func add_drone_port(dp_position: Vector3, port_id: String):
 
 	mesh_instance.position = dp_position * visual_scale
 	add_child(mesh_instance)
-	print("drone port %s added added at %s" % [port_id, dp_position])
+	if logger_instance:
+		logger_instance.print_table_line("INFO", "VISUALIZATION", "drone_port_added", {"port_id": port_id, "position": str(dp_position)})
 
 func move_balloon_to_port(port_position: Vector3):
 	# Optionally apply scale_factor if you use one
@@ -708,7 +714,8 @@ func add_collision_marker(marker_position: Vector3, drone1_id: String, drone2_id
 	}
 	collision_markers.append(marker_data)
 	
-	print("VisualizationSystem: Added collision marker at %s for %s & %s (distance: %.2fm)" % [marker_position, drone1_id, drone2_id, distance])
+	if logger_instance:
+		logger_instance.print_table_line("INFO", "VISUALIZATION", "collision_marker_added", {"position": str(marker_position), "drone1": drone1_id, "drone2": drone2_id, "distance": distance})
 
 func clear_collision_markers():
 	"""
@@ -719,7 +726,8 @@ func clear_collision_markers():
 		for child in collision_marker_container.get_children():
 			child.queue_free()
 	collision_markers.clear()
-	print("VisualizationSystem: Cleared all collision markers")
+	if logger_instance:
+		logger_instance.print_table_line("INFO", "VISUALIZATION", "collision_markers_cleared", {})
 
 func set_show_collision_markers(should_show: bool):
 	"""

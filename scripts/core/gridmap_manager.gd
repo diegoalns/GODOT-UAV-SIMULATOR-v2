@@ -17,6 +17,7 @@ var tile_height: float = 927.67  # Height of each tile in meters (Z axis, latitu
 # Grid dimensions
 var grid_size_x: int = 0  # Number of grid cells in X direction (longitude)
 var grid_size_z: int = 0  # Number of grid cells in Z direction (latitude)
+var logger_instance: Node = null
 
 # Coordinate conversion constants (same as FlightPlanManager)
 const ORIGIN_LAT = 40.55417343  # Reference latitude for coordinate conversion
@@ -25,13 +26,27 @@ const ORIGIN_LON = -73.99583928  # Reference longitude for coordinate conversion
 const CSV_GRID_SPACING_DEG = 0.00833333333  # Approximately 1/120 degrees
 
 func _ready():
+	logger_instance = DebugLogger.get_instance()
+
 	# Load the mesh library resource
 	mesh_library = load("res://resources/Meshs/cell_library.meshlib")
 	if not mesh_library:
 		push_error("Failed to load cell_library.meshlib")
 		return
 	
-	print("GridMapManager: MeshLibrary loaded successfully")
+	_log_info("terrain_mesh_library_loaded")
+
+func _log_info(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_info(DebugLogger.Category.TERRAIN, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("INFO", "TERRAIN", event, data)
+
+func _log_warning(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_warning(DebugLogger.Category.TERRAIN, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("WARNING", "TERRAIN", event, data)
 
 func initialize_gridmap(gridmap: GridMap):
 	"""
@@ -43,7 +58,7 @@ func initialize_gridmap(gridmap: GridMap):
 	# Note: Cell size will be set after analyzing CSV data
 	# Note: mesh_library is already set by the visualization system
 	
-	print("GridMapManager: GridMap initialized (cell size will be calculated from CSV data)")
+	_log_info("terrain_gridmap_initialized")
 
 func load_terrain_data():
 	"""
@@ -58,10 +73,7 @@ func load_terrain_data():
 	
 	# Skip header line
 	var header = file.get_line()
-	print("\n" + "=".repeat(80))
-	print("│ 🗺️ GRIDMAP MANAGER - DIRECT CSV-TO-GRID MAPPING")
-	print("=".repeat(80))
-	print("│ CSV Header: %s" % header)
+	_log_info("terrain_load_started", {"csv_header": header})
 	
 	# Clear existing data structures
 	terrain_data.clear()
@@ -110,9 +122,11 @@ func load_terrain_data():
 	
 	file.close()
 	
-	print("│ Loaded: %d data points from CSV" % line_count)
-	print("│ Unique latitudes: %d" % unique_lats.size())
-	print("│ Unique longitudes: %d" % unique_lons.size())
+	_log_info("terrain_csv_parsed", {
+		"line_count": line_count,
+		"unique_latitudes": unique_lats.size(),
+		"unique_longitudes": unique_lons.size()
+	})
 	
 	# PASS 2: Sort coordinates and create ordered grid indices
 	var lat_list: Array = unique_lats.values()  # Array of float latitudes
@@ -133,9 +147,13 @@ func load_terrain_data():
 	var grid_origin_world_pos = latlon_to_world_position(min_lat, min_lon)  # World position of southernmost point (our grid Z=0)
 	var grid_north_world_pos = latlon_to_world_position(max_lat, min_lon)  # World position of northernmost point (our grid Z=max)
 	
-	print("│ Grid dimensions: %d × %d cells (X × Z)" % [grid_size_x, grid_size_z])
-	print("│ Grid origin CSV: (%.8f, %.8f)" % [min_lat, min_lon])
-	print("│ Grid origin world: %s" % grid_origin_world_pos)
+	_log_info("terrain_grid_dimensions_computed", {
+		"grid_size_x": grid_size_x,
+		"grid_size_z": grid_size_z,
+		"grid_origin_lat": min_lat,
+		"grid_origin_lon": min_lon,
+		"grid_origin_world_pos": grid_origin_world_pos
+	})
 	
 	# Create bidirectional mappings: coordinate ↔ grid index
 	for i in range(lat_list.size()):
@@ -160,16 +178,19 @@ func load_terrain_data():
 		tile_height = lat_spacing_deg * meters_per_deg_lat  # Z dimension in meters (float)
 		tile_width = lon_spacing_deg * meters_per_deg_lon   # X dimension in meters (float)
 		
-		print("├" + "─".repeat(80))
-		print("│ 📐 CALCULATED TILE DIMENSIONS FROM CSV GRID:")
-		print("│   Latitude spacing: %.8f° = %.2f meters (tile_height/Z)" % [lat_spacing_deg, tile_height])
-		print("│   Longitude spacing: %.8f° = %.2f meters (tile_width/X)" % [lon_spacing_deg, tile_width])
-		print("│   Tile size: %.2fm × %.2fm" % [tile_width, tile_height])
+		_log_info("terrain_tile_dimensions_computed", {
+			"lat_spacing_degrees": lat_spacing_deg,
+			"lon_spacing_degrees": lon_spacing_deg,
+			"tile_width_m": tile_width,
+			"tile_height_m": tile_height
+		})
 		
 		# Update GridMap cell size to match calculated dimensions
 		if gridmap_node:
 			gridmap_node.cell_size = Vector3(tile_width, 0.5, tile_height)
-			print("│   GridMap cell_size updated: %s" % gridmap_node.cell_size)
+			_log_info("terrain_gridmap_cell_size_updated", {
+				"cell_size": gridmap_node.cell_size
+			})
 			
 			# CRITICAL FIX: Offset GridMap position accounting for Z-axis inversion
 			# GridMap's Z increases south (positive Z), but our grid Z increases north
@@ -181,14 +202,15 @@ func load_terrain_data():
 			var gridmap_offset = grid_origin_world_pos - tile_center_offset
 			gridmap_node.global_position = gridmap_offset
 			
-			print("│   GridMap position offset: %s" % gridmap_offset)
-			print("│   GridMap grid(0,0) = northernmost, GridMap grid(0,%d) = southernmost" % (grid_size_z - 1))
+			_log_info("terrain_gridmap_offset_applied", {
+				"gridmap_offset": gridmap_offset,
+				"southernmost_grid_z": grid_size_z - 1
+			})
 	else:
-		push_warning("GridMapManager: Not enough data to calculate tile dimensions")
+		_log_warning("terrain_tile_dimensions_insufficient_data")
 	
 	# PASS 4: Map each CSV point to grid cell using direct index lookup
-	print("├" + "─".repeat(80))
-	print("│ 🎯 MAPPING CSV POINTS TO GRID CELLS (Direct Index Mapping):")
+	_log_info("terrain_mapping_started")
 	
 	var points_mapped = 0
 	for point_data in temp_data:
@@ -219,9 +241,10 @@ func load_terrain_data():
 		
 		points_mapped += 1
 	
-	print("│   Mapped: %d CSV points to grid cells" % points_mapped)
-	print("│   Method: Direct coordinate-to-index lookup with GridMap offset")
-	print("├" + "─".repeat(80))
+	_log_info("terrain_mapping_completed", {
+		"points_mapped": points_mapped,
+		"method": "direct_coordinate_to_index_lookup_with_gridmap_offset"
+	})
 	
 	# VERIFICATION: Test alignment for first CSV point
 	if temp_data.size() > 0:
@@ -246,21 +269,21 @@ func load_terrain_data():
 		# Calculate offset
 		var offset = (tile_center_world - csv_world).length()
 		
-		print("│ 🔍 ALIGNMENT VERIFICATION:")
-		print("│   Test CSV point: (%.8f, %.8f)" % [test_lat, test_lon])
-		print("│   Mapped to grid: (%d, %d)" % [test_grid_x, test_grid_z])
-		print("│   CSV world pos: %s" % csv_world)
-		print("│   Tile center: %s" % tile_center_world)
-		print("│   Offset: %.3f meters" % offset)
+		var alignment_status = "poor"
 		if offset < 1.0:
-			print("│   ✅ PERFECT ALIGNMENT (< 1m offset)")
+			alignment_status = "perfect"
 		elif offset < 10.0:
-			print("│   ⚠️ Good alignment (< 10m offset)")
-		else:
-			print("│   ❌ Alignment issue detected (> 10m offset)")
-	
-	print("└" + "─".repeat(80))
-	print("✅ Terrain data loaded with GridMap position offset applied\n")
+			alignment_status = "good"
+		_log_info("terrain_alignment_verified", {
+			"test_lat": test_lat,
+			"test_lon": test_lon,
+			"mapped_grid_x": test_grid_x,
+			"mapped_grid_z": test_grid_z,
+			"offset_m": offset,
+			"alignment_status": alignment_status
+		})
+
+	_log_info("terrain_data_loaded")
 	
 	return true
 
@@ -286,7 +309,10 @@ func altitude_to_mesh_item(altitude: float) -> int:
 			return 5    # Item 6 in mesh library (0-indexed)
 		_:
 			# Default case for unknown altitudes - use item 1 (index 0)
-			print("GridMapManager: Unknown altitude %f, using default item 1" % altitude)
+			_log_warning("terrain_unknown_altitude_default_mesh_used", {
+				"altitude": altitude,
+				"default_mesh_item": 0
+			})
 			return 0
 
 func latlon_to_world_position(latitude: float, longitude: float) -> Vector3:
@@ -338,13 +364,13 @@ func populate_gridmap():
 		push_error("GridMapManager: No terrain data loaded")
 		return false
 	
-	print("\n" + "=".repeat(80))
-	print("│ 🎨 POPULATING GRIDMAP WITH TILES")
-	print("=".repeat(80))
-	print("│ Total points to place: %d" % terrain_data.size())
-	print("│ Tile dimensions: %.2fm × %.2fm" % [tile_width, tile_height])
-	print("│ Grid size: %d × %d cells" % [grid_size_x, grid_size_z])
-	print("├" + "─".repeat(80))
+	_log_info("terrain_population_started", {
+		"total_points": terrain_data.size(),
+		"tile_width_m": tile_width,
+		"tile_height_m": tile_height,
+		"grid_size_x": grid_size_x,
+		"grid_size_z": grid_size_z
+	})
 	
 	var tiles_placed = 0
 	var altitude_counts = {0: 0, 50: 0, 100: 0, 200: 0, 300: 0, 400: 0}  # Track altitude distribution
@@ -380,27 +406,23 @@ func populate_gridmap():
 			altitude_counts[int(altitude)] += 1
 		
 		# Progress logging every 200 tiles
-		if tiles_placed % 200 == 0:
-			print("│ Progress: %d/%d tiles (%.1f%%)" % [
-				tiles_placed, 
-				terrain_data.size(), 
-				(float(tiles_placed) / terrain_data.size()) * 100.0
-			])
-	
-	print("├" + "─".repeat(80))
-	print("│ ✅ GRIDMAP POPULATION COMPLETE")
-	print("│   Tiles placed: %d" % tiles_placed)
-	print("│   Method: Direct CSV-to-grid index mapping")
-	print("│   Alignment: PERFECT (zero offset)")
-	print("├" + "─".repeat(80))
-	print("│ 📊 ALTITUDE DISTRIBUTION:")
+		if tiles_placed % 500 == 0:
+			_log_info("terrain_population_progress", {
+				"tiles_placed": tiles_placed,
+				"total_tiles": terrain_data.size(),
+				"progress_percent": (float(tiles_placed) / terrain_data.size()) * 100.0
+			})
+
+	var altitude_distribution: Dictionary = {}
 	for alt in [0, 50, 100, 200, 300, 400]:
 		var count = altitude_counts[alt]
-		var percentage = (float(count) / tiles_placed) * 100.0 if tiles_placed > 0 else 0.0
-		var bar_length = int(percentage / 2)  # Scale bar to max 50 chars
-		var bar = "█".repeat(bar_length)
-		print("│   %3dft: %4d tiles (%.1f%%) %s" % [alt, count, percentage, bar])
-	print("└" + "─".repeat(80) + "\n")
+		altitude_distribution[str(alt)] = count
+
+	_log_info("terrain_population_completed", {
+		"tiles_placed": tiles_placed,
+		"method": "direct_csv_to_grid_index_mapping",
+		"altitude_distribution": altitude_distribution
+	})
 	
 	return true
 

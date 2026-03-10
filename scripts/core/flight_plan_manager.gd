@@ -9,6 +9,8 @@ var flight_plan_queue: Array = []
 var total_plans_loaded: int = 0
 var total_plans_processed: int = 0
 
+var logger_instance: Node = null
+
 # Configuration: CSV file path for flight plans data
 # Change this constant to load a different flight plan file
 const FLIGHT_PLAN_FILE = "res://data/Regular_Lattice_Manhattan_200 FP_2DP_2Hrs_Ordered.csv"
@@ -25,9 +27,13 @@ func load_flight_plans():
 	Reads CSV data and stores each flight plan as a Dictionary in the queue Array
 	After loading, sorts the queue by ETD (Estimated Time of Departure) for efficient processing
 	"""
+	logger_instance = DebugLogger.get_instance()
 	var file = FileAccess.open(FLIGHT_PLAN_FILE, FileAccess.READ)
 	if not file:
-		print("Error: Could not open flight plans file: ", FLIGHT_PLAN_FILE)
+		if logger_instance:
+			logger_instance.print_table_line("ERROR", "FLIGHT_PLAN", "file_open_failed", {"file": FLIGHT_PLAN_FILE})
+		else:
+			DebugLogger.print_table_row_fallback("ERROR", "FLIGHT_PLAN", "file_open_failed", {"file": FLIGHT_PLAN_FILE})
 		return
 	
 	# Skip header line - first line of CSV contains column names
@@ -67,16 +73,16 @@ func load_flight_plans():
 	flight_plan_queue.sort_custom(func(a, b): return a.etd_seconds < b.etd_seconds)
 	
 	# Print table-formatted summary
-	print("\n" + "=".repeat(80))
-	print("│ 📋 FLIGHT PLANS LOADED")
-	print("=".repeat(80))
-	print("│ Total Plans: %d" % flight_plan_queue.size())
+	var data: Dictionary = {"total_plans": flight_plan_queue.size()}
 	if not flight_plan_queue.is_empty():
-		print("│ First ETD: %.2f seconds" % flight_plan_queue.front().etd_seconds)
-		print("│ Last ETD: %.2f seconds" % flight_plan_queue.back().etd_seconds)
-		var duration = flight_plan_queue.back().etd_seconds - flight_plan_queue.front().etd_seconds
-		print("│ Duration: %.2f seconds (%.2f minutes)" % [duration, duration / 60.0])
-	print("=".repeat(80) + "\n")
+		data["first_etd"] = flight_plan_queue.front().etd_seconds
+		data["last_etd"] = flight_plan_queue.back().etd_seconds
+		data["duration_sec"] = flight_plan_queue.back().etd_seconds - flight_plan_queue.front().etd_seconds
+		data["duration_min"] = data["duration_sec"] / 60.0
+	if logger_instance:
+		logger_instance.print_table_line("INFO", "FLIGHT_PLAN", "plans_loaded", data)
+	else:
+		DebugLogger.print_table_row_fallback("INFO", "FLIGHT_PLAN", "plans_loaded", data)
 
 func get_plans_needing_route_requests(current_time: float) -> Array:
 	"""
@@ -201,16 +207,13 @@ func get_drone_ports() -> Dictionary:
 				"lon": plan.origin_lon    # float: Longitude coordinate of port
 			}
 	
-	# Print table-formatted droneport summary
-	print("\n" + "─".repeat(80))
-	print("│ 🏢 DRONEPORTS IDENTIFIED")
-	print("├" + "─".repeat(15) + "┬" + "─".repeat(25) + "┬" + "─".repeat(36) + "┤")
-	print("│ %-13s │ %-23s │ %-34s │" % ["Port ID", "Latitude", "Longitude"])
-	print("├" + "─".repeat(15) + "┼" + "─".repeat(25) + "┼" + "─".repeat(36) + "┤")
+	# Print droneport summary (table format)
 	for port_id in ports.keys():
 		var lat = ports[port_id]["lat"]
 		var lon = ports[port_id]["lon"]
-		print("│ %-13s │ %23.8f │ %34.8f │" % [port_id, lat, lon])
-	print("└" + "─".repeat(15) + "┴" + "─".repeat(25) + "┴" + "─".repeat(36) + "┘\n")
+		if logger_instance:
+			logger_instance.print_table_line("INFO", "FLIGHT_PLAN", "droneport_identified", {"port_id": port_id, "lat": lat, "lon": lon})
+		else:
+			DebugLogger.print_table_row_fallback("INFO", "FLIGHT_PLAN", "droneport_identified", {"port_id": port_id, "lat": lat, "lon": lon})
 	
 	return ports

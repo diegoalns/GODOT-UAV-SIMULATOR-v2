@@ -65,8 +65,24 @@ var show_timestamps: bool = true
 # Enable color coding (if console supports ANSI colors)
 var use_colors: bool = false
 
+# Emit dictionary payloads even at NORMAL verbosity to keep logs parse-friendly.
+var always_include_data: bool = true
+
+# Use fixed-width table format for all log output (unified Godot + Python format)
+var use_table_format: bool = true
+
+# Fixed-width column sizes: ts | level | category | source | event | data
+const TABLE_WIDTH_TS: int = 12
+const TABLE_WIDTH_LEVEL: int = 8
+const TABLE_WIDTH_CATEGORY: int = 14
+const TABLE_WIDTH_SOURCE: int = 6
+const TABLE_WIDTH_EVENT: int = 32
+const TABLE_WIDTH_DATA: int = 150
+
 # Reference to simulation engine for getting simulation time
 var simulation_engine: Node = null
+
+var _table_header_printed: bool = false
 
 # ============================================================================
 # INITIALIZATION
@@ -151,6 +167,11 @@ func log_message(level: LogLevel, category: Category, message: String, data: Dic
 	if not category_enabled.get(category, true):
 		return  # Category disabled, skip
 	
+	# Print table header on first log (fixed-width format)
+	if use_table_format and not _table_header_printed:
+		_table_header_printed = true
+		print(get_table_header())
+	
 	# Format and print the message
 	var formatted_message = format_message(level, category, message, data)
 	print(formatted_message)
@@ -158,6 +179,7 @@ func log_message(level: LogLevel, category: Category, message: String, data: Dic
 func format_message(level: LogLevel, category: Category, message: String, data: Dictionary) -> String:
 	"""
 	Format a log message with level, category, timestamp, and optional data.
+	Uses fixed-width table format when use_table_format is true.
 	
 	Args:
 		level: LogLevel - Message importance level
@@ -168,31 +190,97 @@ func format_message(level: LogLevel, category: Category, message: String, data: 
 	Returns:
 		String - Formatted log message
 	"""
-	var parts: Array = []  # Array: Parts of the formatted message
+	if use_table_format:
+		var ts = get_timestamp() if show_timestamps else ""
+		var level_str = LogLevel.keys()[level]
+		var category_str = Category.keys()[category]
+		var data_str = ""
+		if not data.is_empty() and (always_include_data or current_verbosity >= VerbosityLevel.VERBOSE):
+			data_str = format_data(data)
+		return format_table_row_string(ts, level_str, category_str, "godot", message, data_str)
 	
-	# Add timestamp if enabled
+	# Legacy format
+	var parts: Array = []
 	if show_timestamps:
-		var timestamp = get_timestamp()  # String: Formatted timestamp
-		parts.append("[%s]" % timestamp)
-	
-	# Add log level
-	var level_str = LogLevel.keys()[level]  # String: Log level name
-	parts.append("[%s]" % level_str)
-	
-	# Add category
-	var category_str = Category.keys()[category]  # String: Category name
-	parts.append("[%s]" % category_str)
-	
-	# Add message
+		parts.append("[%s]" % get_timestamp())
+	parts.append("[%s]" % LogLevel.keys()[level])
+	parts.append("[%s]" % Category.keys()[category])
 	parts.append(message)
-	
-	# Add data if present and verbosity allows
-	if not data.is_empty() and current_verbosity >= VerbosityLevel.VERBOSE:
-		var data_str = format_data(data)  # String: Formatted data dictionary
-		parts.append(" | Data: %s" % data_str)
-	
-	# Join all parts with spaces
+	if not data.is_empty() and (always_include_data or current_verbosity >= VerbosityLevel.VERBOSE):
+		parts.append(" | Data: %s" % format_data(data))
 	return " ".join(parts)
+
+static func _pad_cell(s: String, width: int, truncate: bool = true) -> String:
+	"""Pad or truncate string to fixed width."""
+	var str_val = str(s)
+	if str_val.length() >= width:
+		return str_val.substr(0, width) if truncate else str_val
+	return str_val + " ".repeat(width - str_val.length())
+
+static func format_table_row_string(ts: String, level: String, category: String, source: String, event: String, data: String) -> String:
+	"""
+	Format a single log line as fixed-width table row.
+	Unified format for Godot and Python - same column widths and alignment.
+	
+	Args:
+		ts: Timestamp (e.g. "12.34s" or "1730556789.12")
+		level: DEBUG, INFO, WARNING, ERROR
+		category: ROUTE, WEBSOCKET, DRONE, etc.
+		source: "godot" or "python"
+		event: Short event name
+		data: Key=value pairs or additional info
+	
+	Returns:
+		String - Fixed-width formatted row
+	"""
+	var ts_pad = _pad_cell(ts, TABLE_WIDTH_TS)
+	var level_pad = _pad_cell(level, TABLE_WIDTH_LEVEL)
+	var cat_pad = _pad_cell(category, TABLE_WIDTH_CATEGORY)
+	var src_pad = _pad_cell(source, TABLE_WIDTH_SOURCE)
+	var evt_pad = _pad_cell(event, TABLE_WIDTH_EVENT)
+	var data_pad = _pad_cell(data, TABLE_WIDTH_DATA)
+	return "%s %s %s %s %s %s" % [ts_pad, level_pad, cat_pad, src_pad, evt_pad, data_pad]
+
+static func get_table_header() -> String:
+	"""Return fixed-width table header row."""
+	return format_table_row_string("ts", "level", "category", "source", "event", "data")
+
+static var _fallback_header_printed: bool = false
+
+static func format_data_static(data: Dictionary) -> String:
+	"""Format data dictionary for table data column. Use when logger instance unavailable."""
+	if data.is_empty():
+		return ""
+	var parts: Array = []
+	var sorted_keys = data.keys()
+	sorted_keys.sort()
+	for key in sorted_keys:
+		parts.append("%s=%s" % [key, str(data[key])])
+	return "{%s}" % ", ".join(parts)
+
+static func print_table_row_fallback(level_str: String, category_str: String, event: String, data: Dictionary = {}):
+	"""
+	Print fixed-width table row when DebugLogger instance is unavailable.
+	Use in else branch when logger_instance is null.
+	"""
+	if not _fallback_header_printed:
+		_fallback_header_printed = true
+		print(get_table_header())
+	var ts = "%.2fs" % Time.get_unix_time_from_system()
+	var data_str = format_data_static(data)
+	print(format_table_row_string(ts, level_str, category_str, "godot", event, data_str))
+
+func print_table_line(level_str: String, category_str: String, event: String, data_dict: Dictionary = {}):
+	"""
+	Print a single table row. Use when not going through log_message.
+	Ensures header is printed on first use. Source is always "godot".
+	"""
+	if use_table_format and not _table_header_printed:
+		_table_header_printed = true
+		print(get_table_header())
+	var ts = get_timestamp() if show_timestamps else ""
+	var data_str = format_data(data_dict) if not data_dict.is_empty() else ""
+	print(format_table_row_string(ts, level_str, category_str, "godot", event, data_str))
 
 func format_data(data: Dictionary) -> String:
 	"""
@@ -205,7 +293,9 @@ func format_data(data: Dictionary) -> String:
 		String - Formatted data string
 	"""
 	var parts: Array = []  # Array: Formatted key-value pairs
-	for key in data.keys():
+	var sorted_keys = data.keys()
+	sorted_keys.sort()
+	for key in sorted_keys:
 		var value = data[key]  # Value to format
 		var value_str = str(value)  # String: String representation of value
 		parts.append("%s=%s" % [key, value_str])
@@ -284,6 +374,10 @@ func set_timestamps_enabled(enabled: bool):
 	"""
 	show_timestamps = enabled
 
+func set_table_format(enabled: bool):
+	"""Enable or disable fixed-width table format."""
+	use_table_format = enabled
+
 # ============================================================================
 # CONVENIENCE METHODS - Quick access for common operations
 # ============================================================================
@@ -326,6 +420,24 @@ func log_drone_debug(message: String, data: Dictionary = {}):
 func log_simulation_info(message: String, data: Dictionary = {}):
 	"""Convenience method for simulation info messages."""
 	log_info(Category.SIMULATION, message, data)
+
+func log_event_info(category: Category, event: String, data: Dictionary = {}):
+	"""Structured event log helper at INFO level."""
+	var payload = data.duplicate()
+	payload["event"] = event
+	log_info(category, event, payload)
+
+func log_event_warning(category: Category, event: String, data: Dictionary = {}):
+	"""Structured event log helper at WARNING level."""
+	var payload = data.duplicate()
+	payload["event"] = event
+	log_warning(category, event, payload)
+
+func log_event_error(category: Category, event: String, data: Dictionary = {}):
+	"""Structured event log helper at ERROR level."""
+	var payload = data.duplicate()
+	payload["event"] = event
+	log_error(category, event, payload)
 
 # ============================================================================
 # SINGLETON ACCESS HELPER - Get singleton instance

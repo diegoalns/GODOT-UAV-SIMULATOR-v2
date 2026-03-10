@@ -2,12 +2,12 @@
 
 importer="csv_translation"
 type="Translation"
-uid="uid://c76okxh6gglth"
+uid="uid://ov7bjvbq2d8c"
 valid=false
 
 [deps]
 
-source_file="res://logs/mean_distances.csv"
+source_file="res://logs/python_routes_received.csv"
 
 [params]
 

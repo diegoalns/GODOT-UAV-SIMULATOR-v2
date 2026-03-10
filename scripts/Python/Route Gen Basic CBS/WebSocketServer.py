@@ -9,12 +9,17 @@ import networkx as nx
 from coordinate_constants import *
 from graph_loader import load_graph_from_pickle
 from cbs_pathfinder import cbs_find_path  # Import CBS pathfinding function
+from sim_logger import (
+    log_event,
+    log_route_received_csv,
+    reset_route_received_csv,
+)
 sys.path.append(str(Path(__file__).parent))
 
 # Define helper functions for position mapping
 def slant_range(p1, p2):
     """Calculates the 3D distance between two points in meters."""
-    dx = p2[0] - p1[0]  # X distance in meters
+    dx = p2[0] - p1[0]  # X distance in meterswhats
     dy = p2[1] - p1[1]  # Y distance in meters
     dz = p2[2] - p1[2]  # Z distance in meters
     return np.sqrt(dx**2 + dy**2 + dz**2)
@@ -69,6 +74,18 @@ airspace_graph = load_graph_from_pickle()
 # Each entry stores the sequence of graph nodes the drone will traverse and
 # the simulation time when it will overfly each node
 active_drones_registry = {}  # Dictionary mapping drone_id (str) to route data (dict)
+
+
+def log_ws_info(event: str, **fields):
+    log_event("INFO", "WEBSOCKET", event, **fields)
+
+
+def log_ws_error(event: str, **fields):
+    log_event("ERROR", "WEBSOCKET", event, **fields)
+
+
+def log_pathfinding(event: str, **fields):
+    log_event("INFO", "PATHFINDING", event, **fields)
 
 def cleanup_registry(current_simulation_time: float):
     """
@@ -153,14 +170,12 @@ async def websocket_handler(websocket):
     Args:
         websocket: WebSocket connection object from websockets library
     """
-    # Log when client connects
     client_address = websocket.remote_address if hasattr(websocket, 'remote_address') else "unknown"
-    print("\n" + "="*80, flush=True)
-    print("│ ✅ WEBSOCKET CLIENT CONNECTED", flush=True)
-    print("="*80, flush=True)
-    print(f"│ Client Address: {client_address}", flush=True)
-    print(f"│ Status: Connection established - ready to receive route requests", flush=True)
-    print("="*80 + "\n", flush=True)
+    log_ws_info(
+        "client_connected",
+        client_address=str(client_address),
+        status="ready_to_receive_route_requests",
+    )
     
     try:
         async for message in websocket:
@@ -181,10 +196,23 @@ async def websocket_handler(websocket):
                     max_speed = data.get("max_speed")
                     
                     # Get simulation time from Godot for registry cleanup (float, seconds)
-                    simulation_time = data.get("simulation_time", 0.0)
+                    simulation_time = float(data.get("simulation_time", 0.0))
+                    # CBS temporal planning anchor should be ETD from flight plan.
+                    # Fallback to current simulation time for backward compatibility.
+                    cbs_start_time = float(data.get("etd_seconds", simulation_time))
+                    log_pathfinding(
+                        "route_request_timing_anchor",
+                        plan_id=drone_id,
+                        simulation_time=round(simulation_time, 6),
+                        etd_seconds=round(cbs_start_time, 6),
+                        cbs_start_time=round(cbs_start_time, 6),
+                    )
                     
-                    # Debug: Log message received time
-                    print(f"[PYTHON] Message Received | Plan: {drone_id} | System Clock: {request_received_system_clock_time:.3f} s")
+                    log_ws_info(
+                        "route_request_received",
+                        plan_id=drone_id,
+                        request_received_system_clock_time=round(request_received_system_clock_time, 6),
+                    )
                     
                     # Get node IDs if provided (efficient O(1) lookup)
                     start_node_id = data.get("start_node_id")
@@ -218,8 +246,13 @@ async def websocket_handler(websocket):
                         response_sent_system_clock_time = time.time()  # float: System clock time when error response is sent (seconds since epoch)
                         total_processing_time = response_sent_system_clock_time - request_received_system_clock_time  # float: Total server processing time in seconds
                         
-                        # Debug: Log timing information
-                        print(f"[PYTHON] Pathfinding: N/A (early error) | Response Sent: {response_sent_system_clock_time:.3f} s | Total Processing: {total_processing_time:.3f} s | Plan: {drone_id}")
+                        log_pathfinding(
+                            "route_request_rejected_invalid_nodes",
+                            plan_id=drone_id,
+                            pathfinding_duration=None,
+                            response_sent_system_clock_time=round(response_sent_system_clock_time, 6),
+                            total_processing_time=round(total_processing_time, 6),
+                        )
                         
                         # Send error response with timing metadata
                         response = {
@@ -239,8 +272,8 @@ async def websocket_handler(websocket):
                         # Record start time for pathfinding process (system clock time in seconds)
                         pathfinding_start_time = time.time()  # float: System clock time when pathfinding starts (seconds)
                         
-                        # Use 80% of max speed (same as waypoint speed) for consistency
-                        waypoint_speed = max_speed * 0.8  # Waypoint speed in m/s (float)
+                        # Use full Godot max_speed for CBS timing and returned waypoint speeds
+                        waypoint_speed = max_speed  # Waypoint speed in m/s (float)
                         
                         # Run CBS algorithm with 3-second timeout (system clock time)
                         pathfinding_timeout = 3.0  # Timeout duration in seconds (float)
@@ -252,10 +285,10 @@ async def websocket_handler(websocket):
                                     graph=airspace_graph,  # NetworkX graph with edge weights (nx.Graph)
                                     start_node=start_node,  # Starting node ID (str)
                                     goal_node=end_node,  # Goal node ID (str)
-                                    start_time=simulation_time,  # Simulation time when route starts (float, seconds)
+                                    start_time=cbs_start_time,  # CBS starts at ETD (float, seconds)
                                     speed=waypoint_speed,  # Drone speed for temporal calculations (float, m/s)
                                     registry=active_drones_registry,  # Active drones registry for constraint extraction (dict)
-                                    conflict_threshold=10.0,  # Conflict threshold: 10 seconds (float, seconds)
+                                    conflict_threshold=20.0,  # Conflict threshold: 20 seconds (float, seconds)
                                     max_cbs_iterations=10,  # Maximum CBS iterations (int)
                                     round_trip=True,  # Plan complete round trip route (bool)
                                     wait_time_at_destination=60.0  # Wait 60 seconds at destination before return (float, seconds)
@@ -271,8 +304,13 @@ async def websocket_handler(websocket):
                             response_sent_system_clock_time = time.time()  # float: System clock time when timeout error response is sent (seconds since epoch)
                             total_processing_time = response_sent_system_clock_time - request_received_system_clock_time  # float: Total server processing time in seconds
                             
-                            # Debug: Log timing information
-                            print(f"[PYTHON] Pathfinding: {pathfinding_duration:.3f} s (timeout) | Response Sent: {response_sent_system_clock_time:.3f} s | Total Processing: {total_processing_time:.3f} s | Plan: {drone_id}")
+                            log_pathfinding(
+                                "pathfinding_timeout",
+                                plan_id=drone_id,
+                                pathfinding_duration=round(pathfinding_duration, 6),
+                                response_sent_system_clock_time=round(response_sent_system_clock_time, 6),
+                                total_processing_time=round(total_processing_time, 6),
+                            )
                             
                             # Send timeout error response with timing metadata
                             response = {
@@ -297,8 +335,13 @@ async def websocket_handler(websocket):
                             response_sent_system_clock_time = time.time()  # float: System clock time when error response is sent (seconds since epoch)
                             total_processing_time = response_sent_system_clock_time - request_received_system_clock_time  # float: Total server processing time in seconds
                             
-                            # Debug: Log timing information for error case
-                            print(f"[PYTHON] Pathfinding: {pathfinding_duration:.3f} s (no path) | Response Sent: {response_sent_system_clock_time:.3f} s | Total Processing: {total_processing_time:.3f} s | Plan: {drone_id}")
+                            log_pathfinding(
+                                "pathfinding_no_path",
+                                plan_id=drone_id,
+                                pathfinding_duration=round(pathfinding_duration, 6),
+                                response_sent_system_clock_time=round(response_sent_system_clock_time, 6),
+                                total_processing_time=round(total_processing_time, 6),
+                            )
                             
                             # Send error response with timing metadata
                             response = {
@@ -352,7 +395,7 @@ async def websocket_handler(websocket):
                                 "lat": node_pos[0],         # Latitude in decimal degrees (float)
                                 "lon": node_pos[1],         # Longitude in decimal degrees (float)
                                 "altitude": node_pos[2],    # Altitude in meters (float)
-                                "speed": waypoint_speed,    # Waypoint speed: 80% of drone's max speed (float, m/s)
+                                "speed": waypoint_speed,    # Waypoint speed: same as drone max speed (float, m/s)
                                 "description": waypoint_desc  # Human-readable waypoint label (string)
                             }
                             route.append(waypoint)
@@ -361,15 +404,34 @@ async def websocket_handler(websocket):
                         active_drones_registry[drone_id] = {
                             "route_nodes": path_nodes,           # List of node IDs (list of str)
                             "overfly_times": overfly_times,       # List of overfly times (list of float)
-                            "start_time": simulation_time         # Route start time (float, seconds)
+                            "start_time": cbs_start_time          # Route start time (float, seconds, ETD-based)
                         }
-                        
+
+                        # CSV OUTPUT: Persist per-waypoint planned route timing from Python.
+                        log_route_received_csv(
+                            plan_id=drone_id,
+                            start_node_id=start_node,
+                            end_node_id=end_node,
+                            path_nodes=path_nodes,
+                            overfly_times=overfly_times,
+                            start_time_sim=cbs_start_time,
+                            waypoint_speed_mps=waypoint_speed,
+                            pathfinding_duration_s=pathfinding_duration,
+                            total_processing_time_s=total_processing_time,
+                        )
+
                         # Record system clock timestamp when response is sent
                         response_sent_system_clock_time = time.time()  # float: System clock time when response is sent (seconds since epoch)
                         total_processing_time = response_sent_system_clock_time - request_received_system_clock_time  # float: Total server processing time in seconds
                         
-                        # Debug: Log timing information
-                        print(f"[PYTHON] Pathfinding: {pathfinding_duration:.3f} s | Response Sent: {response_sent_system_clock_time:.3f} s | Total Processing: {total_processing_time:.3f} s | Plan: {drone_id}")
+                        log_pathfinding(
+                            "pathfinding_success",
+                            plan_id=drone_id,
+                            pathfinding_duration=round(pathfinding_duration, 6),
+                            response_sent_system_clock_time=round(response_sent_system_clock_time, 6),
+                            total_processing_time=round(total_processing_time, 6),
+                            waypoint_count=len(route),
+                        )
                         
                     except Exception as e:
                         # Handle any unexpected errors during pathfinding
@@ -381,8 +443,15 @@ async def websocket_handler(websocket):
                         response_sent_system_clock_time = time.time()  # float: System clock time when error response is sent (seconds since epoch)
                         total_processing_time = response_sent_system_clock_time - request_received_system_clock_time  # float: Total server processing time in seconds
                         
-                        # Debug: Log timing information for error case
-                        print(f"[PYTHON] Pathfinding: {pathfinding_duration:.3f} s (error) | Response Sent: {response_sent_system_clock_time:.3f} s | Total Processing: {total_processing_time:.3f} s | Plan: {drone_id}")
+                        log_pathfinding(
+                            "pathfinding_error",
+                            plan_id=drone_id,
+                            pathfinding_duration=round(pathfinding_duration, 6),
+                            response_sent_system_clock_time=round(response_sent_system_clock_time, 6),
+                            total_processing_time=round(total_processing_time, 6),
+                            error_type=type(e).__name__,
+                            error_message=str(e),
+                        )
                         
                         # Send error response with timing metadata
                         response = {
@@ -417,10 +486,9 @@ async def websocket_handler(websocket):
                 elif data.get("type") == "drone_completed":
                     # Handle drone completion message from Godot
                     drone_id = data.get("drone_id")
-                    completion_time = data.get("simulation_time", 0.0)
                     
                     if drone_id in active_drones_registry:
-                        # Drone still in registry - remove it explicitly
+                        # Remove completed drone from registry.
                         active_drones_registry.pop(drone_id)
                 else:
                     # Echo other messages
@@ -430,18 +498,13 @@ async def websocket_handler(websocket):
                 pass
                 
     except websockets.ConnectionClosed:
-        # Handle client disconnection gracefully
-        print("\n" + "="*80, flush=True)
-        print("│ WEBSOCKET CLIENT DISCONNECTED", flush=True)
-        print("="*80 + "\n", flush=True)
+        log_ws_info("client_disconnected")
     except Exception as e:
-        # Handle any unexpected errors in the connection handler
-        print("\n" + "="*80, flush=True)
-        print("│ ❌ WEBSOCKET HANDLER ERROR", flush=True)
-        print("="*80, flush=True)
-        print(f"│ Error Type: {type(e).__name__}", flush=True)
-        print(f"│ Error Message: {str(e)}", flush=True)
-        print("="*80 + "\n", flush=True)
+        log_ws_error(
+            "websocket_handler_error",
+            error_type=type(e).__name__,
+            error_message=str(e),
+        )
         raise  # Re-raise to close the connection
 
 # Start the server on localhost:8765
@@ -458,51 +521,46 @@ async def start_server():
     server_port = 8765  # Server port number (int)
     
     try:
-        # Print initial startup message before attempting to bind to port
-        print("\n" + "="*80, flush=True)
-        print("│ 🌐 COOPERATIVE A* WEBSOCKET SERVER - STARTING", flush=True)
-        print("="*80, flush=True)
-        print(f"│ Server Address: ws://{server_host}:{server_port}", flush=True)
-        print(f"│ Status: INITIALIZING...", flush=True)
-        print("="*80 + "\n", flush=True)
+        # Ensure per-run CSV behavior matches Godot logs: clear file at startup.
+        reset_route_received_csv()
+        log_ws_info(
+            "server_starting",
+            server_address=f"ws://{server_host}:{server_port}",
+            status="initializing",
+        )
         
         # Start the WebSocket server - this may raise OSError if port is in use
         async with websockets.serve(websocket_handler, server_host, server_port):
-            # Server successfully started - print confirmation
-            print("\n" + "="*80, flush=True)
-            print("│ 🌐 COOPERATIVE A* WEBSOCKET SERVER", flush=True)
-            print("="*80, flush=True)
-            print(f"│ Server Address: ws://{server_host}:{server_port}", flush=True)
-            print(f"│ Status: ✅ RUNNING", flush=True)
-            print(f"│ Waiting for connections from Godot simulation...", flush=True)
-            print("="*80 + "\n", flush=True)
+            log_ws_info(
+                "server_running",
+                server_address=f"ws://{server_host}:{server_port}",
+                status="running",
+                waiting_for="godot_connections",
+            )
             
             # Run forever - wait indefinitely for connections
             await asyncio.Future()  # Run forever (blocks until cancelled)
             
     except OSError as e:
-        # Handle port already in use or other network errors
-        print("\n" + "="*80, flush=True)
-        print("│ ❌ SERVER STARTUP FAILED", flush=True)
-        print("="*80, flush=True)
-        print(f"│ Error Type: OSError (Network/Port Error)", flush=True)
-        print(f"│ Error Message: {str(e)}", flush=True)
-        print(f"│", flush=True)
-        print(f"│ Possible causes:", flush=True)
-        print(f"│   1. Port {server_port} is already in use by another process", flush=True)
-        print(f"│   2. Insufficient permissions to bind to port {server_port}", flush=True)
-        print(f"│   3. Network interface issue", flush=True)
-        print("="*80 + "\n", flush=True)
+        log_ws_error(
+            "server_startup_failed",
+            error_type="OSError",
+            error_message=str(e),
+            server_port=server_port,
+            possible_causes=[
+                "port_in_use",
+                "insufficient_permissions",
+                "network_interface_issue",
+            ],
+        )
         raise  # Re-raise to exit with error code
         
     except Exception as e:
-        # Handle any other unexpected errors during startup
-        print("\n" + "="*80, flush=True)
-        print("│ ❌ SERVER STARTUP FAILED", flush=True)
-        print("="*80, flush=True)
-        print(f"│ Error Type: {type(e).__name__}", flush=True)
-        print(f"│ Error Message: {str(e)}", flush=True)
-        print("="*80 + "\n", flush=True)
+        log_ws_error(
+            "server_startup_failed",
+            error_type=type(e).__name__,
+            error_message=str(e),
+        )
         raise  # Re-raise to exit with error code
 
 
@@ -515,24 +573,21 @@ if __name__ == "__main__":
         # Run the async server - this will block until cancelled or error occurs
         asyncio.run(start_server())
     except KeyboardInterrupt:
-        # Handle Ctrl+C gracefully
-        print("\n" + "="*80, flush=True)
-        print("│ ⚠️  SERVER SHUTDOWN REQUESTED (Ctrl+C)", flush=True)
-        print("="*80, flush=True)
-        print("│ Server shutting down gracefully...", flush=True)
-        print("="*80 + "\n", flush=True)
+        log_event(
+            "WARNING",
+            "WEBSOCKET",
+            "server_shutdown_requested",
+            reason="keyboard_interrupt",
+        )
     except Exception as e:
-        # Handle any other uncaught exceptions
-        print("\n" + "="*80, flush=True)
-        print("│ ❌ FATAL ERROR - SERVER CRASHED", flush=True)
-        print("="*80, flush=True)
-        print(f"│ Error Type: {type(e).__name__}", flush=True)
-        print(f"│ Error Message: {str(e)}", flush=True)
         import traceback
-        print(f"│ Traceback:", flush=True)
-        for line in traceback.format_exc().split('\n'):
-            if line.strip():
-                print(f"│ {line}", flush=True)
-        print("="*80 + "\n", flush=True)
+        log_event(
+            "ERROR",
+            "WEBSOCKET",
+            "server_fatal_error",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            traceback=traceback.format_exc(),
+        )
         sys.exit(1)  # Exit with error code
     

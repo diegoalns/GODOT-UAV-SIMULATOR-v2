@@ -23,6 +23,7 @@ var pending_route_requests: Dictionary = {}
 # Statistics tracking for failed pre-requests
 var failed_pre_requests_count: int = 0  # Total count of failed pre-requests
 var failed_pre_requests_by_status: Dictionary = {}  # Dictionary tracking failures by status type
+var logger_instance: Node = null
 
 # Route request timeout duration in seconds (float)
 const ROUTE_REQUEST_TIMEOUT: float = 5.0  # 5 second timeout for pre-requests
@@ -31,6 +32,8 @@ const ROUTE_REQUEST_TIMEOUT: float = 5.0  # 5 second timeout for pre-requests
 const MAX_HEAP_SIZE: int = 1000  # Maximum number of routes in heap
 
 func _ready():
+	logger_instance = DebugLogger.get_instance()
+
 	# Connect to WebSocket data_received signal to handle route responses
 	# WebSocketManager is an autoload singleton, accessible directly
 	if not WebSocketManager.data_received.is_connected(_on_websocket_response_received):
@@ -39,6 +42,18 @@ func _ready():
 	# Connect to WebSocket connected signal to retry sending pending requests
 	if not WebSocketManager.connected.is_connected(_on_websocket_connected):
 		WebSocketManager.connected.connect(_on_websocket_connected)
+
+func _log_info(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_info(DebugLogger.Category.ROUTE, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("INFO", "ROUTE", event, data)
+
+func _log_warning(event: String, data: Dictionary = {}):
+	if logger_instance:
+		logger_instance.log_event_warning(DebugLogger.Category.ROUTE, event, data)
+	else:
+		DebugLogger.print_table_row_fallback("WARNING", "ROUTE", event, data)
 
 func _on_websocket_connected():
 	"""
@@ -129,6 +144,7 @@ func send_route_request(plan: Dictionary):
 		"type": "request_route",
 		"drone_id": plan_id,  # String: Use plan ID as drone_id
 		"model": plan.get("model", ""),  # String: Drone model type
+		"etd_seconds": plan.get("etd_seconds", 0.0),  # float: Planned ETD used as CBS temporal start
 		"start_node_id": plan.get("origin_node_id", ""),  # String: Origin graph node ID
 		"end_node_id": plan.get("dest_node_id", ""),  # String: Destination graph node ID
 		"start_position": {
@@ -163,8 +179,10 @@ func send_route_request(plan: Dictionary):
 	if send_result:
 		pending_route_requests[plan_id].sent = true  # Mark as successfully sent (bool)
 		pending_route_requests[plan_id].request_sent_time = request_sent_time  # Store request sent time for timing calculation
-		# Debug: Log request sent time
-		print("[GODOT] FP Route Request Sent | Plan: %s | System Clock: %.3f s" % [plan_id, request_sent_time])
+		_log_info("pre_request_sent", {
+			"plan_id": plan_id,
+			"request_sent_system_clock_time": request_sent_time
+		})
 	else:
 		pending_route_requests[plan_id].sent = false  # Mark as failed to send (bool)
 		# Keep in pending - will retry when connection is established
@@ -210,8 +228,11 @@ func _on_websocket_response_received(data: PackedByteArray):
 	# Calculate total round-trip time
 	var total_round_trip_time = response_received_time - request_sent_time  # float: Total time from request sent to response received (seconds)
 	
-	# Debug: Log timing information
-	print("[GODOT] FP Route Response Received | Plan: %s | Response Time: %.3f s | Total Round-Trip: %.3f s" % [plan_id, response_received_time, total_round_trip_time])
+	_log_info("pre_request_response_received", {
+		"plan_id": plan_id,
+		"response_received_system_clock_time": response_received_time,
+		"total_round_trip_time": total_round_trip_time
+	})
 	
 	# Handle the response
 	handle_route_response(response_data)
@@ -278,21 +299,37 @@ func handle_route_response(response_data: Dictionary):
 		failed_pre_requests_by_status[status] += 1
 		
 		if status == "no_path":
-			print("[PRE-REQUEST FAILED] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
-			print("   | Server message: %s" % status_message)
-			print("   | Flight plan will be skipped - no drone will be created")
+			_log_warning("pre_request_failed_no_path", {
+				"plan_id": plan_id,
+				"status": status,
+				"etd": etd,
+				"server_message": status_message,
+				"action": "flight_plan_skipped"
+			})
 		elif status == "timeout":
-			print("[PRE-REQUEST TIMEOUT] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
-			print("   | Server message: %s" % status_message)
-			print("   | Flight plan will be skipped - no drone will be created")
+			_log_warning("pre_request_timeout", {
+				"plan_id": plan_id,
+				"status": status,
+				"etd": etd,
+				"server_message": status_message,
+				"action": "flight_plan_skipped"
+			})
 		elif status == "error":
-			print("[PRE-REQUEST ERROR] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
-			print("   | Server message: %s" % status_message)
-			print("   | Flight plan will be skipped - no drone will be created")
+			_log_warning("pre_request_error", {
+				"plan_id": plan_id,
+				"status": status,
+				"etd": etd,
+				"server_message": status_message,
+				"action": "flight_plan_skipped"
+			})
 		else:
-			print("[PRE-REQUEST FAILED] Plan: %s | Status: %s | ETD: %.1f s" % [plan_id, status, etd])
-			print("   | Server message: %s" % status_message)
-			print("   | Flight plan will be skipped - no drone will be created")
+			_log_warning("pre_request_failed", {
+				"plan_id": plan_id,
+				"status": status,
+				"etd": etd,
+				"server_message": status_message,
+				"action": "flight_plan_skipped"
+			})
 		
 		# Remove from pending (FP is gone, not stored anywhere)
 		pending_route_requests.erase(plan_id)
@@ -331,10 +368,13 @@ func check_timeouts(current_simulation_time: float):
 			failed_pre_requests_by_status["timeout"] = 0
 		failed_pre_requests_by_status["timeout"] += 1
 		
-		# Log timeout
-		print("[PRE-REQUEST TIMEOUT] Plan: %s | Status: timeout | ETD: %.1f s" % [plan_id, etd])
-		print("   | No response received within %d seconds" % ROUTE_REQUEST_TIMEOUT)
-		print("   | Flight plan will be skipped - no drone will be created")
+		_log_warning("pre_request_timeout_no_response", {
+			"plan_id": plan_id,
+			"status": "timeout",
+			"etd": etd,
+			"timeout_seconds": ROUTE_REQUEST_TIMEOUT,
+			"action": "flight_plan_skipped"
+		})
 		
 		# Remove from pending (FP is gone)
 		pending_route_requests.erase(plan_id)
@@ -560,19 +600,11 @@ func print_failed_pre_requests_summary():
 	"""
 	if failed_pre_requests_count == 0:
 		return  # No failures to report
-	
-	print("\n" + "=".repeat(80))
-	print("| PRE-REQUEST FAILURES SUMMARY")
-	print("=".repeat(80))
-	print("| Total Failed Pre-Requests: %d" % failed_pre_requests_count)
-	
-	if failed_pre_requests_by_status.size() > 0:
-		print("| Failures by Status:")
-		for status in failed_pre_requests_by_status.keys():
-			var count = failed_pre_requests_by_status[status]
-			print("|   - %s: %d" % [status, count])
-	
-	print("=".repeat(80) + "\n")
+
+	_log_warning("pre_request_failures_summary", {
+		"total_failed_pre_requests": failed_pre_requests_count,
+		"failed_pre_requests_by_status": failed_pre_requests_by_status
+	})
 
 func cleanup_stale_routes(current_simulation_time: float, max_age_seconds: float = 300.0):
 	"""
